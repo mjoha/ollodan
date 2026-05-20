@@ -3,40 +3,47 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Öllödan – koordinera beställningsöl</title>
+    <title>Ollodan</title>
     <link rel="stylesheet" href="css/main.css" />
   </head>
   <body>
     <main class="wrap">
-      <h1>Öllödan</h1>
-      <p class="subtitle">
-        Koordinera inköp av beställningsöl från Systembolaget – dela på ett kolli
-        med kompisarna.
-      </p>
+      <header class="page-header">
+        <h1>Ollodan</h1>
+        <p class="lede">
+          Koordinera beställningsöl från Systembolaget. Samla förslag, rösta,
+          fördela antal per kolli.
+        </p>
+        <p class="disclaimer">
+          Endast 20+. Köp sker hos Systembolaget, inte mellan er privat.
+        </p>
+      </header>
 
-      <p class="disclaimer">
-        Endast för personer 20+. Köp sker hos Systembolaget, inte mellan er
-        privat.
-      </p>
-
-      <section class="card">
-        <h2>Skapa ny grupp</h2>
-        <form id="create-form">
-          <label for="group-name">Gruppnamn</label>
-          <input
-            id="group-name"
-            name="name"
-            required
-            maxlength="100"
-            placeholder="t.ex. Fredagsöl maj"
-          />
-          <button type="submit" class="primary">Skapa grupp</button>
-        </form>
-        <p id="create-error" class="error" hidden></p>
-        <div id="create-result" hidden></div>
+      <section class="win">
+        <div class="title-bar">
+          <span class="title-bar-text">Skapa ny grupp</span>
+        </div>
+        <div class="win-body">
+          <form id="create-form">
+            <div class="field">
+              <label class="field-label" for="group-name">Gruppnamn</label>
+              <input
+                id="group-name"
+                name="name"
+                type="text"
+                required
+                maxlength="100"
+                placeholder="t.ex. Fredagsöl maj"
+              />
+            </div>
+            <button type="submit" class="primary">Skapa</button>
+          </form>
+          <p id="create-error" class="error" hidden></p>
+          <div id="create-result" hidden></div>
+        </div>
       </section>
 
-      <p>
+      <p class="footnote">
         <a href="#" id="join-link">Har du redan en inbjudningslänk?</a>
       </p>
     </main>

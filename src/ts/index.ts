@@ -1,4 +1,5 @@
 import { createGroup } from "./api.js";
+import { escapeAttr, escapeHtml } from "./escape.js";
 import { buildGroupUrl, parseGroupIdFromUrl } from "./groupId.js";
 
 const form = document.getElementById("create-form") as HTMLFormElement;
@@ -30,18 +31,22 @@ form.addEventListener("submit", async (e) => {
       window.location.origin + buildGroupUrl(res.groupId, res.adminSecret);
 
     resultEl.innerHTML = `
-      <p class="success">Gruppen <strong>${escapeHtml(name)}</strong> är skapad!</p>
-      <label>Dela med kompisarna</label>
-      <div class="link-row">
-        <input type="text" readonly value="${escapeAttr(participantUrl)}" id="participant-url" />
-        <button type="button" class="secondary" data-copy="participant-url">Kopiera</button>
+      <p class="success">Gruppen <strong>${escapeHtml(name)}</strong> skapad.</p>
+      <div class="field">
+        <label class="field-label">Deltagarlänk</label>
+        <div class="link-row">
+          <input type="text" readonly value="${escapeAttr(participantUrl)}" id="participant-url" />
+          <button type="button" data-copy="participant-url">Kopiera</button>
+        </div>
       </div>
-      <label>Admin-länk (spara denna!)</label>
-      <div class="link-row">
-        <input type="text" readonly value="${escapeAttr(adminUrl)}" id="admin-url" />
-        <button type="button" class="secondary" data-copy="admin-url">Kopiera</button>
+      <div class="field">
+        <label class="field-label">Admin-länk (spara)</label>
+        <div class="link-row">
+          <input type="text" readonly value="${escapeAttr(adminUrl)}" id="admin-url" />
+          <button type="button" data-copy="admin-url">Kopiera</button>
+        </div>
       </div>
-      <p><a href="${escapeAttr(participantUrl)}">Gå till gruppen →</a></p>
+      <p><a href="${escapeAttr(participantUrl)}">Öppna gruppen</a></p>
     `;
     resultEl.hidden = false;
 
@@ -50,7 +55,7 @@ form.addEventListener("submit", async (e) => {
         const id = (btn as HTMLElement).dataset.copy!;
         const input = document.getElementById(id) as HTMLInputElement;
         navigator.clipboard.writeText(input.value);
-        (btn as HTMLButtonElement).textContent = "Kopierad!";
+        (btn as HTMLButtonElement).textContent = "OK";
         setTimeout(() => {
           (btn as HTMLButtonElement).textContent = "Kopiera";
         }, 1500);
@@ -84,12 +89,4 @@ function extractKeyFromUrl(url: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function escapeAttr(s: string): string {
-  return escapeHtml(s).replace(/"/g, "&quot;");
 }
