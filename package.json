@@ -1,0 +1,12 @@
+{
+  "name": "ollodan",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npm run build && dotnet run --project api/Ollodan.Api"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

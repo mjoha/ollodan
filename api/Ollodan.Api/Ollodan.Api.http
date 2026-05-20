@@ -1,0 +1,12 @@
+@host = http://localhost:5210
+
+GET {{host}}/health
+
+###
+
+POST {{host}}/api/groups
+Content-Type: application/json
+
+{
+  "name": "Test group"
+}

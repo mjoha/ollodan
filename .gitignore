@@ -1,0 +1,18 @@
+# .NET
+bin/
+obj/
+*.db
+*.db-shm
+*.db-wal
+api/Ollodan.Api/ollodan.db*
+api/Ollodan.Api/wwwroot/
+
+# Node
+node_modules/
+dist/
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+.DS_Store

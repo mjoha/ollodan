@@ -1,0 +1,13 @@
+services:
+  ollodan:
+    build: .
+    ports:
+      - "5210:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Data Source=/data/ollodan.db
+    volumes:
+      - ollodan-data:/data
+
+volumes:
+  ollodan-data:
