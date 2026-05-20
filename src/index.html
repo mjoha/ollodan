@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Öllödan – koordinera beställningsöl</title>
+    <link rel="stylesheet" href="css/main.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Öllödan</h1>
+      <p class="subtitle">
+        Koordinera inköp av beställningsöl från Systembolaget – dela på ett kolli
+        med kompisarna.
+      </p>
+
+      <p class="disclaimer">
+        Endast för personer 20+. Köp sker hos Systembolaget, inte mellan er
+        privat.
+      </p>
+
+      <section class="card">
+        <h2>Skapa ny grupp</h2>
+        <form id="create-form">
+          <label for="group-name">Gruppnamn</label>
+          <input
+            id="group-name"
+            name="name"
+            required
+            maxlength="100"
+            placeholder="t.ex. Fredagsöl maj"
+          />
+          <button type="submit" class="primary">Skapa grupp</button>
+        </form>
+        <p id="create-error" class="error" hidden></p>
+        <div id="create-result" hidden></div>
+      </section>
+
+      <p>
+        <a href="#" id="join-link">Har du redan en inbjudningslänk?</a>
+      </p>
+    </main>
+    <script type="module" src="js/index.js"></script>
+  </body>
+</html>

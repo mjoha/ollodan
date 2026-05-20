@@ -1,0 +1,8 @@
+.git
+.gitignore
+node_modules
+dist
+api/Ollodan.Api/bin
+api/Ollodan.Api/obj
+api/Ollodan.Api/ollodan.db*
+**/.cursor
