@@ -1,6 +1,8 @@
 import {
   addProduct,
+  adminDeleteProduct,
   adminFetch,
+  deleteProduct,
   getGroup,
   joinGroup,
   setOrderLine,
@@ -46,6 +48,41 @@ function groupPhases(g: GroupData) {
 
 function isGroupAdmin(): boolean {
   return !!session && !!group && session.memberId === group.adminMemberId;
+}
+
+function canDeleteProduct(p: GroupProduct): boolean {
+  if (!group || group.phase !== "Collecting") return false;
+  if (adminKey || isGroupAdmin()) return true;
+  return !!session && p.addedByMemberId === session.memberId;
+}
+
+async function removeProduct(productId: string, btn: HTMLButtonElement) {
+  const product = group?.products.find((p) => p.id === productId);
+  const label = product?.name ?? "ölen";
+  if (!confirm(`Ta bort ${label}?`)) return;
+
+  const isOwn = !!session && product?.addedByMemberId === session.memberId;
+  const useMemberApi = !!session && (isOwn || isGroupAdmin());
+
+  await withBusy(btn, "…", async () => {
+    try {
+      if (useMemberApi) {
+        await deleteProduct(groupId!, session!.sessionToken, productId);
+      } else if (adminKey) {
+        await adminDeleteProduct(groupId!, adminKey, productId);
+      } else {
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Kunde inte ta bort");
+    }
+  });
+}
+
+function renderProductActions(p: GroupProduct): string {
+  if (!canDeleteProduct(p)) return "";
+  return `<button type="button" class="delete-product-btn" data-product-id="${p.id}">Ta bort</button>`;
 }
 
 const params = new URLSearchParams(window.location.search);
@@ -545,7 +582,7 @@ function renderCollecting(drafts: FormDrafts): string {
   const list =
     group.products.length === 0
       ? '<p class="muted">Inga förslag ännu.</p>'
-      : renderProductList(group.products, false);
+      : renderProductList(group.products, { allowDelete: true });
 
   return `${addForm}${win(`Förslag (${group.products.length})`, list)}`;
 }
@@ -555,7 +592,7 @@ function renderWaitingForAdminBeer(): string {
   const preview =
     group.products.length === 0
       ? '<p class="muted">Admin lägger in öl snart.</p>'
-      : `<p class="hint">Admin bekräftar öl innan ni kan ange antal.</p>${renderProductList(group.products, false)}`;
+      : `<p class="hint">Admin bekräftar öl innan ni kan ange antal.</p>${renderProductList(group.products, { allowDelete: true })}`;
   return win("Väntar på öl", preview);
 }
 
@@ -583,6 +620,7 @@ function renderAdminBeerSetup(drafts: FormDrafts): string {
                   <span>${formatPrice(p.price)} · min ${p.minimumOrderQuantity} st</span>
                 </span>
               </label>
+              ${renderProductActions(p)}
             </li>`;
             })
             .join("")}
@@ -813,7 +851,11 @@ function renderOrderHistory(): string {
   return win("Historik", body);
 }
 
-function renderProductList(products: GroupProduct[], showVotes: boolean): string {
+function renderProductList(
+  products: GroupProduct[],
+  opts: { showVotes?: boolean; allowDelete?: boolean } = {}
+): string {
+  const { showVotes = false, allowDelete = false } = opts;
   return `<ul class="product-list">
     ${products
       .map(
@@ -824,7 +866,10 @@ function renderProductList(products: GroupProduct[], showVotes: boolean): string
           <strong>${escapeHtml(p.name)}</strong>
           <span>${formatPrice(p.price)}${p.addedByName ? ` · ${escapeHtml(p.addedByName)}` : ""}${showVotes ? ` · ${p.voteCount}` : ""}</span>
         </div>
-        <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" class="link-out">Öppna</a>
+        <div class="product-actions">
+          <a href="${escapeHtml(p.url)}" target="_blank" rel="noopener" class="link-out">Öppna</a>
+          ${allowDelete ? renderProductActions(p) : ""}
+        </div>
       </li>`
       )
       .join("")}
@@ -908,6 +953,13 @@ function bindEvents() {
 
   app.addEventListener("click", async (e) => {
     const target = e.target as HTMLElement;
+
+    const deleteBtn = target.closest(".delete-product-btn") as HTMLButtonElement | null;
+    if (deleteBtn) {
+      const productId = deleteBtn.dataset.productId!;
+      await removeProduct(productId, deleteBtn);
+      return;
+    }
 
     const voteBtn = target.closest(".vote-btn") as HTMLButtonElement | null;
     if (voteBtn && session) {

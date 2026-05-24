@@ -72,6 +72,29 @@ public class GroupsController(GroupService groups) : ControllerBase
             0));
     }
 
+    [HttpDelete("{id:guid}/products/{productId:guid}")]
+    [HttpPost("{id:guid}/products/{productId:guid}/delete")]
+    [RequireMember]
+    [EnableRateLimiting("write")]
+    public async Task<IActionResult> DeleteProduct(Guid id, Guid productId, CancellationToken ct)
+    {
+        var member = (Member)HttpContext.Items["Member"]!;
+        var (ok, error) = await groups.DeleteProductAsync(id, productId, member.Id, asAdmin: false, ct);
+        if (!ok) return BadRequest(new { error });
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/admin/products/{productId:guid}")]
+    [HttpPost("{id:guid}/admin/products/{productId:guid}/delete")]
+    [RequireAdmin]
+    [EnableRateLimiting("write")]
+    public async Task<IActionResult> AdminDeleteProduct(Guid id, Guid productId, CancellationToken ct)
+    {
+        var (ok, error) = await groups.DeleteProductAsync(id, productId, memberId: null, asAdmin: true, ct);
+        if (!ok) return BadRequest(new { error });
+        return NoContent();
+    }
+
     [HttpPost("{id:guid}/vote")]
     [RequireMember]
     [EnableRateLimiting("write")]

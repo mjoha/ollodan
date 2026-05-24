@@ -153,6 +153,22 @@ export function addProduct(
   }, token);
 }
 
+export function deleteProduct(groupId: string, token: string, productId: string) {
+  return apiFetch<void>(
+    `/api/groups/${groupId}/products/${productId}/delete`,
+    { method: "POST" },
+    token
+  );
+}
+
+export function adminDeleteProduct(groupId: string, adminKey: string, productId: string) {
+  return adminFetch(
+    `/api/groups/${groupId}/admin/products/${productId}/delete`,
+    adminKey,
+    { method: "POST" }
+  );
+}
+
 export function vote(groupId: string, token: string, productId: string) {
   return apiFetch<void>(`/api/groups/${groupId}/vote`, {
     method: "POST",

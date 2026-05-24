@@ -139,6 +139,41 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         return product;
     }
 
+    public async Task<(bool Ok, string? Error)> DeleteProductAsync(
+        Guid groupId,
+        Guid productId,
+        Guid? memberId,
+        bool asAdmin,
+        CancellationToken ct = default)
+    {
+        var group = await db.Groups
+            .Include(g => g.Products)
+            .Include(g => g.Votes)
+            .FirstOrDefaultAsync(g => g.Id == groupId, ct);
+
+        if (group is null) return (false, "Gruppen finns inte.");
+        if (group.Phase != GroupPhase.Collecting)
+            return (false, "Kan bara ta bort öl under insamlingsfasen.");
+
+        var product = group.Products.FirstOrDefault(p => p.Id == productId);
+        if (product is null) return (false, "Produkten finns inte.");
+
+        var isGroupAdmin = memberId is not null && memberId == group.AdminMemberId;
+        if (!asAdmin && !isGroupAdmin)
+        {
+            if (memberId is null || product.AddedByMemberId != memberId)
+                return (false, "Du kan bara ta bort egna förslag.");
+        }
+
+        var votesToRemove = group.Votes.Where(v => v.ProductId == productId).ToList();
+        db.Votes.RemoveRange(votesToRemove);
+        if (group.WinningProductId == productId)
+            group.WinningProductId = null;
+        db.Products.Remove(product);
+        await db.SaveChangesAsync(ct);
+        return (true, null);
+    }
+
     public async Task<bool> VoteAsync(Guid groupId, Member member, Guid productId, CancellationToken ct = default)
     {
         var group = await db.Groups

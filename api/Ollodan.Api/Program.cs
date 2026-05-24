@@ -53,7 +53,6 @@ if (corsOrigins is { Length: > 0 })
     app.UseCors();
 
 app.UseRateLimiter();
-UseStaticFiles(app);
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
@@ -67,6 +66,7 @@ app.MapGet("/g/{id:guid}", (Guid id, HttpContext ctx) =>
 });
 
 app.MapControllers();
+UseStaticFiles(app);
 app.Run();
 
 static void UseStaticFiles(WebApplication app)
