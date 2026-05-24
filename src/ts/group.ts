@@ -11,7 +11,6 @@ import {
 import { escapeHtml } from "./escape.js";
 import { buildGroupUrl, parseGroupIdFromLocation } from "./groupId.js";
 import {
-  clearSession,
   getAdminKey,
   getSession,
   setAdminKey,
@@ -43,7 +42,6 @@ let group: GroupData | null = null;
 let lastGroupSnapshot = "";
 
 interface FormDrafts {
-  swishNote?: string;
   productUrl?: string;
   productName?: string;
   productPrice?: string;
@@ -55,9 +53,6 @@ let pendingDrafts: FormDrafts = {};
 
 function captureDrafts(): FormDrafts {
   const d: FormDrafts = {};
-  const swish = document.getElementById("swish-note") as HTMLTextAreaElement | null;
-  if (swish) d.swishNote = swish.value;
-
   const url = document.querySelector(
     '#add-product-form input[name="url"]'
   ) as HTMLInputElement | null;
@@ -106,14 +101,6 @@ async function init() {
     return;
   }
 
-  if (params.get("leave") === "1") {
-    clearSession(groupId);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("leave");
-    window.location.replace(url.pathname + url.search);
-    return;
-  }
-
   if (adminKeyFromUrl) {
     setAdminKey(groupId, adminKeyFromUrl);
   }
@@ -153,18 +140,16 @@ function render() {
       "Grupp",
       `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>`
     )}
-    ${renderPhaseWindow(group.phase)}
   `;
+
+  if (adminKey) {
+    html += renderAdminPanel();
+  }
+
+  html += renderPhaseWindow(group.phase);
 
   if (!session) {
     html += renderJoinForm(drafts);
-  } else {
-    html += `<p class="you">Användare: <strong>${escapeHtml(session.displayName)}</strong>
-      · <a href="?leave=1">Byt användare</a></p>`;
-  }
-
-  if (adminKey) {
-    html += renderAdminPanel(drafts);
   }
 
   switch (group.phase) {
@@ -237,11 +222,8 @@ function renderAdminLinks(): string {
     </div>`;
 }
 
-function renderAdminPanel(drafts: FormDrafts): string {
+function renderAdminPanel(): string {
   if (!group) return "";
-
-  const swishValue =
-    drafts.swishNote !== undefined ? drafts.swishNote : (group.swishNote ?? "");
 
   const tieBreak =
     group.needsTieBreak && group.phase === "Voting"
@@ -273,12 +255,7 @@ function renderAdminPanel(drafts: FormDrafts): string {
     "Administration",
     `${renderAdminLinks()}
      ${tieBreak}
-     <div class="admin-actions btn-row">${actions}</div>
-     <div class="field">
-       <label class="field-label" for="swish-note">Betalningsinfo</label>
-       <textarea id="swish-note" rows="2" placeholder="Valfritt">${escapeHtml(swishValue)}</textarea>
-     </div>
-     <button type="button" id="btn-save-swish">Spara</button>`,
+     <div class="admin-actions btn-row">${actions}</div>`,
     "admin"
   );
 }
@@ -417,8 +394,7 @@ function renderOrdering(drafts: FormDrafts): string {
            return `<li><span>${escapeHtml(o.displayName)}</span><span>${qtyLabel} · ${formatPrice(o.lineTotal)}</span></li>`;
          })
          .join("") || '<li class="muted">—</li>'}
-     </ul>
-     ${group.swishNote ? `<p class="swish-note">${escapeHtml(group.swishNote)}</p>` : ""}`
+     </ul>`
   );
 
   return winner + qty + overview;
@@ -439,17 +415,19 @@ function renderClosed(): string {
          )
          .join("")}
      </ul>
-     ${group.swishNote ? `<p class="swish-note">${escapeHtml(group.swishNote)}</p>` : ""}
      <p class="footnote">Köp hos Systembolaget — inte privat vidareförsäljning.</p>`
   );
 }
 
 function renderMembers(): string {
   if (!group || group.members.length === 0) return "";
-  return win(
-    `Deltagare (${group.members.length})`,
-    `<p class="member-chips">${group.members.map((m) => `<span class="chip">${escapeHtml(m.displayName)}</span>`).join("")}</p>`
-  );
+  const chips = group.members
+    .map((m) => {
+      const isYou = session?.memberId === m.id;
+      return `<span class="chip${isYou ? " chip-current" : ""}">${escapeHtml(m.displayName)}</span>`;
+    })
+    .join("");
+  return win(`Deltagare (${group.members.length})`, `<p class="member-chips">${chips}</p>`);
 }
 
 function renderProductList(products: GroupProduct[], showVotes: boolean): string {
@@ -568,20 +546,6 @@ function bindEvents() {
   document.getElementById("btn-close")?.addEventListener("click", () =>
     adminAction(`/api/groups/${groupId}/admin/close`, "POST")
   );
-  document.getElementById("btn-save-swish")?.addEventListener("click", async () => {
-    if (!adminKey) return;
-    const note = (document.getElementById("swish-note") as HTMLTextAreaElement).value;
-    try {
-      await adminFetch(`/api/groups/${groupId}/admin/swish-note`, adminKey, {
-        method: "PUT",
-        body: JSON.stringify({ swishNote: note || null }),
-      });
-      await refresh();
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Kunde inte spara");
-    }
-  });
-
   app.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = (btn as HTMLElement).dataset.copy!;

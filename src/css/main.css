@@ -199,14 +199,6 @@ summary:focus-visible {
   color: var(--muted);
 }
 
-.you {
-  font-size: var(--size-sm);
-  margin: 0 0 0.5rem;
-  padding: 0.25rem 0.35rem;
-  border: 1px solid var(--shadow);
-  background: var(--window);
-}
-
 /* —— Form controls —— */
 
 .field {
@@ -495,15 +487,6 @@ button.primary:not(:disabled) {
   border-bottom: none;
 }
 
-.swish-note {
-  margin-top: 0.5rem;
-  padding: 0.35rem;
-  border: 1px solid var(--shadow);
-  background: var(--window);
-  font-size: var(--size-sm);
-  white-space: pre-wrap;
-}
-
 /* —— Members —— */
 
 .member-chips {
@@ -518,6 +501,13 @@ button.primary:not(:disabled) {
   padding: 0.1rem 0.3rem;
   border: 1px solid var(--shadow);
   background: var(--window);
+}
+
+.chip-current {
+  background: var(--select-bg);
+  color: var(--select-fg);
+  border-color: var(--dark);
+  font-weight: 700;
 }
 
 /* —— Alerts —— */

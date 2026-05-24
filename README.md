@@ -32,8 +32,6 @@ Ways to simulate several people:
 | Normal window + one Incognito window | 2 |
 | Chrome + Firefox (or Edge) | 2+ |
 | Two Chrome **profiles** (Settings → Profiles) | 2+ |
-| Same browser: open group as user A, then visit `?leave=1` on the group URL to join as someone else | 2+ on one browser |
-
 Example: admin in Chrome at `http://localhost:5210/g/{id}?key=…`, friend in Firefox at `http://localhost:5210/g/{id}` (participant link only).
 
 ### Docker
