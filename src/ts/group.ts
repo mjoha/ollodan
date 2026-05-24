@@ -18,7 +18,14 @@ import {
   type MemberSession,
 } from "./storage.js";
 import { win } from "./ui.js";
-import { wireRequiredFields } from "./validate.js";
+import {
+  formatSwishDigits,
+  normalizeSwishNumber,
+  swishDigitsOnly,
+  validateField,
+  validateForm,
+  wireValidatedFields,
+} from "./validate.js";
 
 const PHASES_SUGGESTIONS = [
   { key: "Collecting", label: "1. Förslag" },
@@ -173,18 +180,6 @@ function formatPrice(n: number): string {
   return `${n.toFixed(0)} kr`;
 }
 
-/** Store as digits-only Swedish mobile (10 digits, 07…) */
-function normalizeSwishNumber(raw: string): string {
-  let digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("46") && digits.length >= 11) {
-    digits = `0${digits.slice(2)}`;
-  }
-  if (digits.length === 9 && digits.startsWith("7")) {
-    digits = `0${digits}`;
-  }
-  return digits;
-}
-
 async function init() {
   if (!groupId) {
     app.innerHTML = win(
@@ -275,12 +270,9 @@ function buildRegions(drafts: FormDrafts): Record<string, string> {
   }
 
   return {
-    header: win(
-      "Grupp",
-      `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>`
-    ),
+    header: renderGroupHeader(drafts),
     "admin-hint": renderAdminKeyHint(),
-    admin: adminKey ? renderAdminPanel(drafts) : "",
+    admin: adminKey ? renderAdminPanel() : "",
     phase: renderPhaseWindow(group),
     main,
     members: renderMembers(),
@@ -302,7 +294,7 @@ function render() {
   }
 
   app.setAttribute("aria-busy", "false");
-  wireRequiredFields(app);
+  wireValidatedFields(app);
   restoreFocus(focusSelector);
 }
 
@@ -316,6 +308,9 @@ function phaseHint(g: GroupData): string {
         return isGroupAdmin()
           ? "Lägg till öl från Systembolaget och bekräfta valet."
           : "Vänta tills admin har valt öl.";
+      }
+      if (g.products.length === 1) {
+        return "Ett förslag — admin kan gå vidare utan röstning.";
       }
       return "Lägg till öl-förslag via Systembolaget-länk.";
     case "Voting":
@@ -339,15 +334,7 @@ function renderAdminKeyHint(): string {
 }
 
 function formatSwishNumber(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 10 && digits.startsWith("07")) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8)}`;
-  }
-  if (digits.length === 11 && digits.startsWith("46")) {
-    const local = `0${digits.slice(2)}`;
-    return `+46 ${local.slice(1, 3)}-${local.slice(3, 6)} ${local.slice(6, 8)} ${local.slice(8)}`;
-  }
-  return raw;
+  return formatSwishDigits(swishDigitsOnly(raw));
 }
 
 function swishTelHref(raw: string): string {
@@ -357,13 +344,54 @@ function swishTelHref(raw: string): string {
   return `+46${digits}`;
 }
 
-function renderSwishNote(): string {
-  if (!group?.swishNote) return "";
+function adminDisplayName(g: GroupData): string {
+  return g.members.find((m) => m.id === g.adminMemberId)?.displayName ?? "—";
+}
+
+function renderSwishInHeader(drafts: FormDrafts): string {
+  if (!group) return "";
+
+  if (adminKey) {
+    const swishRaw = drafts.swishNote ?? group.swishNote ?? "";
+    const swishValue = swishRaw ? formatSwishDigits(swishDigitsOnly(swishRaw)) : "";
+    return `
+    <div class="field group-swish">
+      <label class="field-label" for="swish-note">Swish-nummer (valfritt)</label>
+      <div class="link-row">
+        <input
+          type="text"
+          id="swish-note"
+          name="swishNote"
+          inputmode="numeric"
+          autocomplete="tel"
+          maxlength="13"
+          placeholder="070-123 45 67"
+          value="${escapeAttr(swishValue)}"
+          data-validate="swish"
+          data-validate-msg="Ange ett giltigt mobilnummer (10 siffror, börjar med 07)."
+        />
+        <button type="button" id="btn-save-swish">Spara</button>
+      </div>
+    </div>`;
+  }
+
+  if (!group.swishNote) return "";
+
   const display = formatSwishNumber(group.swishNote);
-  return `<div class="inset-panel swish-panel">
+  return `<p class="group-swish-line">
     <span class="field-label">Swish</span>
-    <p><a href="tel:${escapeAttr(swishTelHref(group.swishNote))}">${escapeHtml(display)}</a></p>
-  </div>`;
+    <a href="tel:${escapeAttr(swishTelHref(group.swishNote))}">${escapeHtml(display)}</a>
+  </p>`;
+}
+
+function renderGroupHeader(drafts: FormDrafts): string {
+  if (!group) return "";
+  return win(
+    "Grupp",
+    `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>
+     <p class="group-meta">Admin: <strong>${escapeHtml(adminDisplayName(group))}</strong></p>
+     ${renderSwishInHeader(drafts)}`
+  );
 }
 
 function renderPhaseWindow(g: GroupData): string {
@@ -394,7 +422,7 @@ function renderJoinForm(drafts: FormDrafts): string {
   const value = drafts.displayName ?? "";
   return win(
     "Gå med",
-    `<form id="join-form">
+    `<form id="join-form" novalidate>
       <div class="field">
         <label class="field-label" for="display-name">Namn</label>
         <input id="display-name" name="displayName" type="text" required maxlength="50" placeholder="t.ex. Erik" value="${escapeAttr(value)}" data-required-msg="Ange ditt namn." />
@@ -429,10 +457,8 @@ function renderAdminLinks(): string {
     </div>`;
 }
 
-function renderAdminPanel(drafts: FormDrafts): string {
+function renderAdminPanel(): string {
   if (!group) return "";
-
-  const swishValue = drafts.swishNote ?? group.swishNote ?? "";
 
   const tieBreak =
     group.needsTieBreak && group.phase === "Voting"
@@ -454,11 +480,17 @@ function renderAdminPanel(drafts: FormDrafts): string {
   let actionHint = "";
   let actionButtons = "";
   if (group.phase === "Collecting" && group.allowSuggestions) {
-    const canStart = group.products.length > 0;
+    const count = group.products.length;
+    const canStart = count > 0;
+    const single = count === 1;
     if (!canStart) {
       actionHint = '<p class="hint admin-action-hint">Minst ett förslag krävs.</p>';
+    } else if (single) {
+      actionHint =
+        '<p class="hint admin-action-hint">Ett förslag — röstning hoppas över.</p>';
     }
-    actionButtons = `<button type="button" id="btn-start-voting" class="primary"${canStart ? "" : " disabled"}>Starta röstning</button>`;
+    const startLabel = single ? "Gå vidare till antal" : "Starta röstning";
+    actionButtons = `<button type="button" id="btn-start-voting" class="primary"${canStart ? "" : " disabled"}>${startLabel}</button>`;
   } else if (group.phase === "Voting") {
     actionButtons = `<button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>`;
   } else if (group.phase === "Ordering") {
@@ -480,24 +512,6 @@ function renderAdminPanel(drafts: FormDrafts): string {
   return win(
     "Administration",
     `${renderAdminLinks()}
-     <div class="field">
-       <label class="field-label" for="swish-note">Swish-nummer (valfritt)</label>
-       <div class="link-row">
-         <input
-           type="tel"
-           id="swish-note"
-           name="swishNote"
-           inputmode="tel"
-           autocomplete="tel"
-           maxlength="20"
-           placeholder="070-123 45 67"
-           pattern="^(\\+46|0)7[\\d\\s\\-]{7,12}$"
-           value="${escapeAttr(swishValue)}"
-           data-required-msg="Ange ett giltigt svenskt mobilnummer (07… eller +46 7…)."
-         />
-         <button type="button" id="btn-save-swish">Spara</button>
-       </div>
-     </div>
      ${tieBreak}
      ${adminActions}`,
     "admin"
@@ -516,7 +530,7 @@ function renderCollecting(drafts: FormDrafts): string {
     ? win(
         "Lägg till öl",
         `<p class="hint">Klistra in systembolaget.se-länk</p>
-         <form id="add-product-form">
+         <form id="add-product-form" novalidate>
            <input type="url" name="url" required placeholder="https://www.systembolaget.se/produkt/..." value="${escapeAttr(drafts.productUrl ?? "")}" data-required-msg="Klistra in en produktlänk." />
            <details class="manual-fallback">
              <summary>Manuell inmatning</summary>
@@ -577,7 +591,7 @@ function renderAdminBeerSetup(drafts: FormDrafts): string {
   return win(
     "Beställningsöl",
     `<p class="hint">1. Klistra in systembolaget.se-länk · 2. Lägg till · 3. Bekräfta öl</p>
-     <form id="add-product-form">
+     <form id="add-product-form" novalidate>
        <input type="url" name="url" required placeholder="https://www.systembolaget.se/produkt/..." value="${escapeAttr(drafts.productUrl ?? "")}" data-required-msg="Klistra in en produktlänk." />
        <details class="manual-fallback">
          <summary>Manuell inmatning</summary>
@@ -712,7 +726,7 @@ function renderOrdering(drafts: FormDrafts): string {
      </ul>`
   );
 
-  return winner + qty + overview + renderSwishNote();
+  return winner + qty + overview;
 }
 
 function renderClosed(): string {
@@ -736,7 +750,6 @@ function renderClosed(): string {
          })
          .join("")}
      </ul>
-     ${renderSwishNote()}
      <p class="footnote">Köp hos Systembolaget — inte privat vidareförsäljning.</p>`
   );
 }
@@ -835,6 +848,7 @@ function bindEvents() {
     e.preventDefault();
 
     if (form.id === "join-form") {
+      if (!validateForm(form)) return;
       const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement;
       const name = (new FormData(form).get("displayName") as string).trim();
       await withBusy(submit, "Går med…", async () => {
@@ -856,6 +870,7 @@ function bindEvents() {
 
     if (form.id === "add-product-form") {
       if (!session) return;
+      if (!validateForm(form)) return;
       const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement;
       const fd = new FormData(form);
       const url = (fd.get("url") as string).trim();
@@ -913,12 +928,8 @@ function bindEvents() {
       const input = document.getElementById("swish-note") as HTMLInputElement | null;
       const saveBtn = target.closest("#btn-save-swish") as HTMLButtonElement;
       if (!input) return;
-      const raw = input.value.trim();
-      if (raw && !input.checkValidity()) {
-        input.reportValidity();
-        return;
-      }
-      const normalized = raw ? normalizeSwishNumber(raw) : null;
+      if (!validateField(input, true)) return;
+      const normalized = normalizeSwishNumber(input.value);
       await withBusy(saveBtn, "…", async () => {
         try {
           await adminFetch(`/api/groups/${groupId}/admin/swish-note`, adminKey, {

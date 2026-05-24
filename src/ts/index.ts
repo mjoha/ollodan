@@ -1,7 +1,7 @@
 import { createGroup } from "./api.js";
 import { buildGroupUrl, parseGroupIdFromUrl } from "./groupId.js";
 import { setAdminKey, setSession } from "./storage.js";
-import { wireRequiredFields } from "./validate.js";
+import { validateForm, wireValidatedFields } from "./validate.js";
 
 const form = document.getElementById("create-form") as HTMLFormElement;
 const nameInput = document.getElementById("group-name") as HTMLInputElement;
@@ -17,15 +17,15 @@ const joinUrlInput = document.getElementById("join-url") as HTMLInputElement;
 const joinErrorEl = document.getElementById("join-error") as HTMLElement;
 const joinCancelBtn = document.getElementById("join-cancel") as HTMLButtonElement;
 
-wireRequiredFields(form);
-wireRequiredFields(joinForm);
+wireValidatedFields(form);
+wireValidatedFields(joinForm);
 
 let creating = false;
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (creating) return;
-  if (!form.reportValidity()) return;
+  if (!validateForm(form)) return;
 
   errorEl.hidden = true;
 
@@ -89,7 +89,7 @@ joinCancelBtn.addEventListener("click", hideJoinPanel);
 
 joinForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  if (!joinForm.reportValidity()) return;
+  if (!validateForm(joinForm)) return;
 
   joinErrorEl.hidden = true;
   const url = joinUrlInput.value.trim();

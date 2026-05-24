@@ -325,16 +325,27 @@ textarea {
   border-color: var(--shadow) var(--light) var(--light) var(--shadow);
 }
 
+input.is-invalid,
+textarea.is-invalid,
 input:user-invalid,
 textarea:user-invalid {
   border-color: var(--error) var(--light) var(--light) var(--error);
   background: #fff8f8;
 }
 
+input.is-invalid:focus-visible,
+textarea.is-invalid:focus-visible,
 input:focus:user-invalid,
 textarea:focus:user-invalid {
   outline: 1px dotted var(--error);
   outline-offset: 1px;
+}
+
+.field-error {
+  color: var(--error);
+  font-size: var(--size-sm);
+  font-weight: 700;
+  margin: 0.2rem 0 0;
 }
 
 textarea {
@@ -468,13 +479,27 @@ button.primary:not(:disabled) {
   margin-bottom: 0.5rem;
 }
 
-.swish-panel {
-  margin-top: 0.35rem;
+.group-meta {
+  margin: 0.35rem 0 0.5rem;
+  font-size: var(--size-sm);
 }
 
-.swish-panel p {
-  margin: 0.15rem 0 0;
+.group-swish {
+  margin-bottom: 0;
+}
+
+.group-swish-line {
+  margin: 0 0 0.15rem;
   font-size: var(--size-sm);
+}
+
+.group-swish-line .field-label {
+  display: inline;
+  margin-right: 0.35rem;
+}
+
+.group-swish-line a {
+  font-weight: 700;
 }
 
 /* —— Lists & products —— */

@@ -220,7 +220,16 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         if (group.Phase != GroupPhase.Collecting) return (false, "Gruppen är inte i insamlingsfas.");
         if (group.Products.Count == 0) return (false, "Lägg till minst en öl först.");
 
-        group.Phase = GroupPhase.Voting;
+        if (group.Products.Count == 1)
+        {
+            group.WinningProductId = group.Products.First().Id;
+            group.Phase = GroupPhase.Ordering;
+        }
+        else
+        {
+            group.Phase = GroupPhase.Voting;
+        }
+
         await db.SaveChangesAsync(ct);
         return (true, null);
     }
