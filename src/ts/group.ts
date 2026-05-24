@@ -8,7 +8,7 @@ import {
   type GroupData,
   type GroupProduct,
 } from "./api.js";
-import { escapeHtml } from "./escape.js";
+import { escapeAttr, escapeHtml } from "./escape.js";
 import { buildGroupUrl, parseGroupIdFromLocation } from "./groupId.js";
 import {
   getAdminKey,
@@ -19,19 +19,18 @@ import {
 } from "./storage.js";
 import { win } from "./ui.js";
 import { wireRequiredFields } from "./validate.js";
-import { escapeAttr } from "./escape.js";
 
 const PHASES_SUGGESTIONS = [
   { key: "Collecting", label: "1. Förslag" },
   { key: "Voting", label: "2. Rösta" },
   { key: "Ordering", label: "3. Antal" },
-  { key: "Closed", label: "4. Beställ" },
+  { key: "Closed", label: "4. Klart" },
 ] as const;
 
 const PHASES_ADMIN_PICKS = [
   { key: "Collecting", label: "1. Öl" },
   { key: "Ordering", label: "2. Antal" },
-  { key: "Closed", label: "3. Beställ" },
+  { key: "Closed", label: "3. Klart" },
 ] as const;
 
 function groupPhases(g: GroupData) {
@@ -62,9 +61,15 @@ interface FormDrafts {
   quantity?: string;
   displayName?: string;
   selectedBeerId?: string;
+  swishNote?: string;
 }
 
 let pendingDrafts: FormDrafts = {};
+let shellReady = false;
+let eventsBound = false;
+let pollFailures = 0;
+
+const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
 function captureDrafts(): FormDrafts {
   const d: FormDrafts = {};
@@ -96,19 +101,88 @@ function captureDrafts(): FormDrafts {
   ) as HTMLInputElement | null;
   if (beerPick) d.selectedBeerId = beerPick.value;
 
+  const swish = document.getElementById("swish-note") as HTMLInputElement | null;
+  if (swish) d.swishNote = swish.value;
+
   return d;
 }
 
+let errorTimer: number | null = null;
+
 function showError(msg: string) {
+  if (errorTimer !== null) window.clearTimeout(errorTimer);
   errorBanner.textContent = msg;
+  errorBanner.className = "status-banner";
   errorBanner.hidden = false;
-  setTimeout(() => {
+  errorTimer = window.setTimeout(() => {
     errorBanner.hidden = true;
+    errorTimer = null;
   }, 5000);
+}
+
+function setConnectionOk() {
+  pollFailures = 0;
+  connectionStatus.hidden = true;
+  connectionStatus.textContent = "";
+  connectionStatus.classList.remove("is-offline");
+}
+
+function setConnectionOffline() {
+  connectionStatus.hidden = false;
+  connectionStatus.textContent = "Ingen anslutning";
+  connectionStatus.classList.add("is-offline");
+}
+
+function saveFocusSelector(): string | null {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || !app.contains(el)) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const name = (el as HTMLInputElement).name;
+  if (name) return `[name="${CSS.escape(name)}"]`;
+  const productId = el.dataset.productId;
+  if (productId) return `[data-product-id="${CSS.escape(productId)}"]`;
+  return null;
+}
+
+function restoreFocus(selector: string | null) {
+  if (!selector) return;
+  const el = app.querySelector(selector) as HTMLElement | null;
+  el?.focus({ preventScroll: true });
+}
+
+async function withBusy(
+  btn: HTMLButtonElement,
+  label: string,
+  fn: () => Promise<void>
+) {
+  if (btn.disabled || btn.classList.contains("is-busy")) return;
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  btn.textContent = label;
+  try {
+    await fn();
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+    btn.textContent = prev;
+  }
 }
 
 function formatPrice(n: number): string {
   return `${n.toFixed(0)} kr`;
+}
+
+/** Store as digits-only Swedish mobile (10 digits, 07…) */
+function normalizeSwishNumber(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("46") && digits.length >= 11) {
+    digits = `0${digits.slice(2)}`;
+  }
+  if (digits.length === 9 && digits.startsWith("7")) {
+    digits = `0${digits}`;
+  }
+  return digits;
 }
 
 async function init() {
@@ -127,6 +201,7 @@ async function init() {
   adminKey = getAdminKey(groupId);
   session = getSession(groupId);
 
+  bindEvents();
   await refresh();
   pollTimer = window.setInterval(refresh, 4000);
 }
@@ -134,6 +209,7 @@ async function init() {
 async function refresh() {
   try {
     const data = await getGroup(groupId!);
+    setConnectionOk();
     const snapshot = JSON.stringify(data);
     if (snapshot === lastGroupSnapshot) return;
 
@@ -142,11 +218,74 @@ async function refresh() {
     group = data;
     render();
   } catch (err) {
+    pollFailures++;
+    if (group) {
+      if (pollFailures >= 2) setConnectionOffline();
+      return;
+    }
+    shellReady = false;
     app.innerHTML = win(
       "Fel",
-      `<p class="error">${escapeHtml(err instanceof Error ? err.message : "Fel vid laddning")}</p>`
+      `<p class="error">${escapeHtml(err instanceof Error ? err.message : "Fel vid laddning")}</p>
+       <p><button type="button" class="primary" id="btn-retry-load">Försök igen</button></p>`
     );
+    document.getElementById("btn-retry-load")?.addEventListener("click", () => refresh());
   }
+}
+
+function ensureRegionsShell() {
+  if (shellReady) return;
+  app.innerHTML = `
+    <div id="region-header"></div>
+    <div id="region-admin-hint"></div>
+    <div id="region-admin"></div>
+    <div id="region-phase"></div>
+    <div id="region-main"></div>
+    <div id="region-members"></div>
+    <div id="region-history"></div>
+  `;
+  shellReady = true;
+}
+
+function patchRegion(id: string, html: string) {
+  const el = document.getElementById(id);
+  if (!el || el.innerHTML === html) return;
+  el.innerHTML = html;
+}
+
+function buildRegions(drafts: FormDrafts): Record<string, string> {
+  if (!group) return {};
+
+  let main = "";
+  if (!session) main += renderJoinForm(drafts);
+
+  switch (group.phase) {
+    case "Collecting":
+      main += renderCollecting(drafts);
+      break;
+    case "Voting":
+      main += renderVoting();
+      break;
+    case "Ordering":
+      main += renderOrdering(drafts);
+      break;
+    case "Closed":
+      main += renderClosed();
+      break;
+  }
+
+  return {
+    header: win(
+      "Grupp",
+      `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>`
+    ),
+    "admin-hint": renderAdminKeyHint(),
+    admin: adminKey ? renderAdminPanel(drafts) : "",
+    phase: renderPhaseWindow(group),
+    main,
+    members: renderMembers(),
+    history: renderOrderHistory(),
+  };
 }
 
 function render() {
@@ -154,56 +293,101 @@ function render() {
 
   const drafts = pendingDrafts;
   pendingDrafts = {};
+  const focusSelector = saveFocusSelector();
 
-  let html = `
-    ${win(
-      "Grupp",
-      `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>`
-    )}
-  `;
-
-  if (adminKey) {
-    html += renderAdminPanel();
+  ensureRegionsShell();
+  const regions = buildRegions(drafts);
+  for (const [key, html] of Object.entries(regions)) {
+    patchRegion(`region-${key}`, html);
   }
 
-  html += renderPhaseWindow(group);
-
-  if (!session) {
-    html += renderJoinForm(drafts);
-  }
-
-  switch (group.phase) {
-    case "Collecting":
-      html += renderCollecting(drafts);
-      break;
-    case "Voting":
-      html += renderVoting();
-      break;
-    case "Ordering":
-      html += renderOrdering(drafts);
-      break;
-    case "Closed":
-      html += renderClosed();
-      break;
-  }
-
-  html += renderMembers();
-  html += renderOrderHistory();
-
-  app.innerHTML = html;
-  bindEvents();
+  app.setAttribute("aria-busy", "false");
   wireRequiredFields(app);
+  restoreFocus(focusSelector);
+}
+
+function phaseHint(g: GroupData): string {
+  if (!session) {
+    return "Ange ditt namn nedan för att gå med i gruppen.";
+  }
+  switch (g.phase) {
+    case "Collecting":
+      if (!g.allowSuggestions) {
+        return isGroupAdmin()
+          ? "Lägg till öl från Systembolaget och bekräfta valet."
+          : "Vänta tills admin har valt öl.";
+      }
+      return "Lägg till öl-förslag via Systembolaget-länk.";
+    case "Voting":
+      return "Välj den öl du vill beställa — flest röster vinner.";
+    case "Ordering":
+      return "Ange hur många flaskor du vill ha och spara.";
+    case "Closed":
+      return "Beställ hos Systembolaget enligt sammanfattningen.";
+    default:
+      return "";
+  }
+}
+
+function renderAdminKeyHint(): string {
+  if (!group || adminKey) return "";
+  if (!session || session.memberId !== group.adminMemberId) return "";
+  return win(
+    "Admin",
+    `<p class="hint">Öppna <strong>admin-länken</strong> du fick när gruppen skapades för att styra gruppen och dela inbjudan. Spara den i bokmärken.</p>`
+  );
+}
+
+function formatSwishNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("07")) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("46")) {
+    const local = `0${digits.slice(2)}`;
+    return `+46 ${local.slice(1, 3)}-${local.slice(3, 6)} ${local.slice(6, 8)} ${local.slice(8)}`;
+  }
+  return raw;
+}
+
+function swishTelHref(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("46")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+46${digits.slice(1)}`;
+  return `+46${digits}`;
+}
+
+function renderSwishNote(): string {
+  if (!group?.swishNote) return "";
+  const display = formatSwishNumber(group.swishNote);
+  return `<div class="inset-panel swish-panel">
+    <span class="field-label">Swish</span>
+    <p><a href="tel:${escapeAttr(swishTelHref(group.swishNote))}">${escapeHtml(display)}</a></p>
+  </div>`;
 }
 
 function renderPhaseWindow(g: GroupData): string {
-  const items = groupPhases(g)
-    .map(
-      (p) =>
-        `<li class="phase-step${p.key === g.phase ? " phase-step-current" : ""}">${p.label}</li>`
-    )
+  const phases = groupPhases(g);
+  const currentIdx = phases.findIndex((p) => p.key === g.phase);
+  const items = phases
+    .map((p, i) => {
+      const cls =
+        i === currentIdx
+          ? " phase-step-current"
+          : i < currentIdx
+            ? " phase-step-done"
+            : "";
+      return `<li class="phase-step${cls}">${p.label}</li>`;
+    })
     .join("");
 
-  return win("Fas", `<ul class="phase-steps">${items}</ul>`);
+  const hint = phaseHint(g);
+  const hintHtml = hint ? `<p class="hint phase-hint">${escapeHtml(hint)}</p>` : "";
+
+  return win(
+    "Steg",
+    `${hintHtml}<ul class="phase-steps" aria-label="Gruppens steg">${items}</ul>`
+  );
 }
 
 function renderJoinForm(drafts: FormDrafts): string {
@@ -215,7 +399,7 @@ function renderJoinForm(drafts: FormDrafts): string {
         <label class="field-label" for="display-name">Namn</label>
         <input id="display-name" name="displayName" type="text" required maxlength="50" placeholder="t.ex. Erik" value="${escapeAttr(value)}" data-required-msg="Ange ditt namn." />
       </div>
-      <button type="submit" class="primary">OK</button>
+      <button type="submit" class="primary">Gå med</button>
     </form>`
   );
 }
@@ -237,7 +421,7 @@ function renderAdminLinks(): string {
       </div>
     </div>
     <div class="field">
-      <label class="field-label">Admin-länk (spara)</label>
+      <label class="field-label">Admin-länk (behåll privat)</label>
       <div class="link-row">
         <input type="text" readonly value="${escapeAttr(adminUrl)}" id="admin-url" />
         <button type="button" data-copy="admin-url">Kopiera</button>
@@ -245,8 +429,10 @@ function renderAdminLinks(): string {
     </div>`;
 }
 
-function renderAdminPanel(): string {
+function renderAdminPanel(drafts: FormDrafts): string {
   if (!group) return "";
+
+  const swishValue = drafts.swishNote ?? group.swishNote ?? "";
 
   const tieBreak =
     group.needsTieBreak && group.phase === "Voting"
@@ -265,27 +451,55 @@ function renderAdminPanel(): string {
     </div>`
       : "";
 
-  let actions = "";
+  let actionHint = "";
+  let actionButtons = "";
   if (group.phase === "Collecting" && group.allowSuggestions) {
-    actions = `<button type="button" id="btn-start-voting" class="primary">Starta röstning</button>`;
+    const canStart = group.products.length > 0;
+    if (!canStart) {
+      actionHint = '<p class="hint admin-action-hint">Minst ett förslag krävs.</p>';
+    }
+    actionButtons = `<button type="button" id="btn-start-voting" class="primary"${canStart ? "" : " disabled"}>Starta röstning</button>`;
   } else if (group.phase === "Voting") {
-    actions = `<button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>`;
+    actionButtons = `<button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>`;
   } else if (group.phase === "Ordering") {
     const closeLabel = group.isRepeating
       ? "Bekräfta beställning och starta om"
       : "Stäng order";
     const closeDisabled = group.isOrderFulfilled ? "" : " disabled";
-    const closeHint = group.isOrderFulfilled
-      ? ""
-      : '<p class="hint admin-close-hint">Minimiantalet måste vara uppnått innan beställningen kan avslutas.</p>';
-    actions = `${closeHint}<button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>`;
+    if (!group.isOrderFulfilled) {
+      actionHint =
+        '<p class="hint admin-action-hint">Minimiantalet måste vara uppnått innan beställningen kan avslutas.</p>';
+    }
+    actionButtons = `<button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>`;
   }
+
+  const adminActions = actionButtons
+    ? `<div class="admin-actions">${actionHint}<div class="btn-row">${actionButtons}</div></div>`
+    : "";
 
   return win(
     "Administration",
     `${renderAdminLinks()}
+     <div class="field">
+       <label class="field-label" for="swish-note">Swish-nummer (valfritt)</label>
+       <div class="link-row">
+         <input
+           type="tel"
+           id="swish-note"
+           name="swishNote"
+           inputmode="tel"
+           autocomplete="tel"
+           maxlength="20"
+           placeholder="070-123 45 67"
+           pattern="^(\\+46|0)7[\\d\\s\\-]{7,12}$"
+           value="${escapeAttr(swishValue)}"
+           data-required-msg="Ange ett giltigt svenskt mobilnummer (07… eller +46 7…)."
+         />
+         <button type="button" id="btn-save-swish">Spara</button>
+       </div>
+     </div>
      ${tieBreak}
-     <div class="admin-actions btn-row">${actions}</div>`,
+     ${adminActions}`,
     "admin"
   );
 }
@@ -498,7 +712,7 @@ function renderOrdering(drafts: FormDrafts): string {
      </ul>`
   );
 
-  return winner + qty + overview;
+  return winner + qty + overview + renderSwishNote();
 }
 
 function renderClosed(): string {
@@ -522,6 +736,7 @@ function renderClosed(): string {
          })
          .join("")}
      </ul>
+     ${renderSwishNote()}
      <p class="footnote">Köp hos Systembolaget — inte privat vidareförsäljning.</p>`
   );
 }
@@ -605,154 +820,237 @@ function renderProductList(products: GroupProduct[], showVotes: boolean): string
 
 function productImage(p: GroupProduct): string {
   if (p.imageUrl) {
-    return `<img src="${escapeHtml(p.imageUrl)}" alt="" class="product-img" loading="lazy" />`;
+    return `<img src="${escapeHtml(p.imageUrl)}" alt="${escapeAttr(p.name)}" class="product-img" loading="lazy" />`;
   }
-  return `<div class="product-img placeholder" aria-hidden="true"></div>`;
+  return `<div class="product-img placeholder" role="img" aria-label="${escapeAttr(p.name)}"></div>`;
 }
 
 function bindEvents() {
-  const joinForm = document.getElementById("join-form") as HTMLFormElement | null;
-  joinForm?.addEventListener("submit", async (e) => {
+  if (eventsBound) return;
+  eventsBound = true;
+
+  app.addEventListener("submit", async (e) => {
+    const form = (e.target as HTMLElement).closest("form");
+    if (!form || !app.contains(form)) return;
     e.preventDefault();
-    const name = (new FormData(joinForm).get("displayName") as string).trim();
-    try {
-      const res = await joinGroup(groupId!, name);
-      session = {
-        memberId: res.memberId,
-        sessionToken: res.sessionToken,
-        displayName: res.displayName,
-      };
-      setSession(groupId!, session);
-      await refresh();
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Kunde inte gå med");
-    }
-  });
 
-  const addForm = document.getElementById("add-product-form") as HTMLFormElement | null;
-  addForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!session) return;
-    const fd = new FormData(addForm);
-    const url = (fd.get("url") as string).trim();
-    const name = (fd.get("name") as string)?.trim() || undefined;
-    const priceRaw = fd.get("price") as string;
-    const price = priceRaw ? Number(priceRaw) : undefined;
-    try {
-      await addProduct(groupId!, session.sessionToken, url, name, price);
-      addForm.reset();
-      await refresh();
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Kunde inte lägga till");
-    }
-  });
-
-  document.querySelectorAll(".vote-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!session) return;
-      const productId = (btn as HTMLElement).dataset.productId!;
-      try {
-        await vote(groupId!, session.sessionToken, productId);
-        await refresh();
-      } catch (err) {
-        showError(err instanceof Error ? err.message : "Kunde inte rösta");
-      }
-    });
-  });
-
-  const orderForm = document.getElementById("order-form") as HTMLFormElement | null;
-  if (orderForm && group?.winningProduct) {
-    const qtyInput = orderForm.querySelector('input[name="quantity"]') as HTMLInputElement;
-    const lineTotal = document.getElementById("line-total");
-    const price = group.winningProduct.price;
-
-    const updateTotal = () => {
-      if (lineTotal) lineTotal.textContent = formatPrice(Number(qtyInput.value) * price);
-    };
-
-    orderForm.querySelector(".qty-minus")?.addEventListener("click", () => {
-      qtyInput.value = String(Math.max(0, Number(qtyInput.value) - 1));
-      updateTotal();
-    });
-    orderForm.querySelector(".qty-plus")?.addEventListener("click", () => {
-      qtyInput.value = String(Number(qtyInput.value) + 1);
-      updateTotal();
-    });
-    qtyInput.addEventListener("input", updateTotal);
-
-    orderForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (!session) return;
-      try {
-        await setOrderLine(groupId!, session.sessionToken, Number(qtyInput.value));
-        await refresh();
-      } catch (err) {
-        showError(err instanceof Error ? err.message : "Kunde inte spara");
-      }
-    });
-  }
-
-  document.getElementById("btn-start-voting")?.addEventListener("click", () =>
-    adminAction(`/api/groups/${groupId}/admin/start-voting`, "POST")
-  );
-  document.getElementById("btn-confirm-beer")?.addEventListener("click", async () => {
-    if (!adminKey) return;
-    const picked = document.querySelector(
-      'input[name="beer-pick"]:checked'
-    ) as HTMLInputElement | null;
-    if (!picked) {
-      showError("Välj en öl att bekräfta.");
+    if (form.id === "join-form") {
+      const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+      const name = (new FormData(form).get("displayName") as string).trim();
+      await withBusy(submit, "Går med…", async () => {
+        try {
+          const res = await joinGroup(groupId!, name);
+          session = {
+            memberId: res.memberId,
+            sessionToken: res.sessionToken,
+            displayName: res.displayName,
+          };
+          setSession(groupId!, session);
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte gå med");
+        }
+      });
       return;
     }
-    try {
-      await adminFetch(`/api/groups/${groupId}/admin/confirm-beer`, adminKey, {
-        method: "POST",
-        body: JSON.stringify({ productId: picked.value }),
+
+    if (form.id === "add-product-form") {
+      if (!session) return;
+      const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+      const fd = new FormData(form);
+      const url = (fd.get("url") as string).trim();
+      const name = (fd.get("name") as string)?.trim() || undefined;
+      const priceRaw = fd.get("price") as string;
+      const price = priceRaw ? Number(priceRaw) : undefined;
+      await withBusy(submit, "Lägger till…", async () => {
+        try {
+          await addProduct(groupId!, session!.sessionToken, url, name, price);
+          form.reset();
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte lägga till");
+        }
       });
-      await refresh();
-    } catch (err) {
-      showError(err instanceof Error ? err.message : "Kunde inte bekräfta öl");
+      return;
+    }
+
+    if (form.id === "order-form" && group?.winningProduct) {
+      if (!session) return;
+      const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+      const qtyInput = form.querySelector('input[name="quantity"]') as HTMLInputElement;
+      await withBusy(submit, "Sparar…", async () => {
+        try {
+          await setOrderLine(groupId!, session!.sessionToken, Number(qtyInput.value));
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte spara");
+        }
+      });
+      return;
+    }
+
+  });
+
+  app.addEventListener("click", async (e) => {
+    const target = e.target as HTMLElement;
+
+    const voteBtn = target.closest(".vote-btn") as HTMLButtonElement | null;
+    if (voteBtn && session) {
+      const productId = voteBtn.dataset.productId!;
+      await withBusy(voteBtn, "…", async () => {
+        try {
+          await vote(groupId!, session!.sessionToken, productId);
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte rösta");
+        }
+      });
+      return;
+    }
+
+    if (target.closest("#btn-save-swish")) {
+      if (!adminKey) return;
+      const input = document.getElementById("swish-note") as HTMLInputElement | null;
+      const saveBtn = target.closest("#btn-save-swish") as HTMLButtonElement;
+      if (!input) return;
+      const raw = input.value.trim();
+      if (raw && !input.checkValidity()) {
+        input.reportValidity();
+        return;
+      }
+      const normalized = raw ? normalizeSwishNumber(raw) : null;
+      await withBusy(saveBtn, "…", async () => {
+        try {
+          await adminFetch(`/api/groups/${groupId}/admin/swish-note`, adminKey, {
+            method: "PUT",
+            body: JSON.stringify({ swishNote: normalized }),
+          });
+          if (group) group.swishNote = normalized;
+          lastGroupSnapshot = "";
+          await refresh();
+          const btn = document.getElementById("btn-save-swish") as HTMLButtonElement | null;
+          if (btn) {
+            btn.textContent = "Sparat!";
+            setTimeout(() => {
+              btn.textContent = "Spara";
+            }, 1500);
+          }
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte spara nummer");
+        }
+      });
+      return;
+    }
+
+    if (target.closest("#btn-start-voting")) {
+      adminAction(`/api/groups/${groupId}/admin/start-voting`, "POST");
+      return;
+    }
+
+    if (target.closest("#btn-confirm-beer")) {
+      if (!adminKey) return;
+      const picked = app.querySelector(
+        'input[name="beer-pick"]:checked'
+      ) as HTMLInputElement | null;
+      if (!picked) {
+        showError("Välj en öl att bekräfta.");
+        return;
+      }
+      const btn = target.closest("button") as HTMLButtonElement;
+      await withBusy(btn, "Bekräftar…", async () => {
+        try {
+          await adminFetch(`/api/groups/${groupId}/admin/confirm-beer`, adminKey, {
+            method: "POST",
+            body: JSON.stringify({ productId: picked.value }),
+          });
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte bekräfta öl");
+        }
+      });
+      return;
+    }
+
+    if (target.closest("#btn-finish-voting")) {
+      adminAction(`/api/groups/${groupId}/admin/finish-voting`, "POST");
+      return;
+    }
+
+    if (target.closest("#btn-close")) {
+      adminAction(`/api/groups/${groupId}/admin/close`, "POST");
+      return;
+    }
+
+    const copyBtn = target.closest("[data-copy]") as HTMLButtonElement | null;
+    if (copyBtn) {
+      const id = copyBtn.dataset.copy!;
+      const input = document.getElementById(id) as HTMLInputElement;
+      try {
+        await navigator.clipboard.writeText(input.value);
+        copyBtn.textContent = "Kopierat!";
+        setTimeout(() => {
+          copyBtn.textContent = "Kopiera";
+        }, 1500);
+      } catch {
+        input.select();
+        showError("Kunde inte kopiera — markera länken och kopiera manuellt.");
+      }
+      return;
+    }
+
+    const pickWinner = target.closest(".pick-winner") as HTMLButtonElement | null;
+    if (pickWinner && adminKey) {
+      const productId = pickWinner.dataset.productId!;
+      await withBusy(pickWinner, "…", async () => {
+        try {
+          await adminFetch(`/api/groups/${groupId}/admin/pick-winner`, adminKey, {
+            method: "POST",
+            body: JSON.stringify({ productId }),
+          });
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte välja vinnare");
+        }
+      });
+      return;
+    }
+
+    if (target.closest(".qty-minus") || target.closest(".qty-plus")) {
+      const orderForm = target.closest("#order-form");
+      if (!orderForm || !group?.winningProduct) return;
+      const qtyInput = orderForm.querySelector('input[name="quantity"]') as HTMLInputElement;
+      const lineTotal = document.getElementById("line-total");
+      const price = group.winningProduct.price;
+      if (target.closest(".qty-minus")) {
+        qtyInput.value = String(Math.max(0, Number(qtyInput.value) - 1));
+      } else {
+        qtyInput.value = String(Number(qtyInput.value) + 1);
+      }
+      if (lineTotal) {
+        lineTotal.textContent = formatPrice(Number(qtyInput.value) * price);
+      }
     }
   });
 
-  document.querySelectorAll('input[name="beer-pick"]').forEach((radio) => {
-    radio.addEventListener("change", () => {
-      const btn = document.getElementById("btn-confirm-beer") as HTMLButtonElement | null;
-      if (btn) btn.disabled = false;
-    });
-  });
-  document.getElementById("btn-finish-voting")?.addEventListener("click", () =>
-    adminAction(`/api/groups/${groupId}/admin/finish-voting`, "POST")
-  );
-  document.getElementById("btn-close")?.addEventListener("click", () =>
-    adminAction(`/api/groups/${groupId}/admin/close`, "POST")
-  );
-  app.querySelectorAll("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = (btn as HTMLElement).dataset.copy!;
-      const input = document.getElementById(id) as HTMLInputElement;
-      navigator.clipboard.writeText(input.value);
-      (btn as HTMLButtonElement).textContent = "OK";
-      setTimeout(() => {
-        (btn as HTMLButtonElement).textContent = "Kopiera";
-      }, 1500);
-    });
+  app.addEventListener("input", (e) => {
+    const target = e.target as HTMLElement;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.name !== "quantity" || !group?.winningProduct) return;
+    const lineTotal = document.getElementById("line-total");
+    if (lineTotal) {
+      lineTotal.textContent = formatPrice(Number(target.value) * group.winningProduct.price);
+    }
   });
 
-  document.querySelectorAll(".pick-winner").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!adminKey) return;
-      const productId = (btn as HTMLElement).dataset.productId!;
-      try {
-        await adminFetch(`/api/groups/${groupId}/admin/pick-winner`, adminKey, {
-          method: "POST",
-          body: JSON.stringify({ productId }),
-        });
-        await refresh();
-      } catch (err) {
-        showError(err instanceof Error ? err.message : "Kunde inte välja vinnare");
-      }
-    });
+  app.addEventListener("change", (e) => {
+    const target = e.target as HTMLElement;
+    if (
+      target instanceof HTMLInputElement &&
+      target.name === "beer-pick"
+    ) {
+      const btn = document.getElementById("btn-confirm-beer") as HTMLButtonElement | null;
+      if (btn) btn.disabled = false;
+    }
   });
 }
 

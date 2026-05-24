@@ -11,9 +11,15 @@
       <header class="page-header">
         <h1>Öl-lödan</h1>
         <p class="lede">
-          Koordinera beställningsöl från Systembolaget. Samla förslag, rösta,
-          fördela antal per kolli.
+          Koordinera beställningsöl från Systembolaget — tillsammans når ni
+          minimiantalet och ser vem som beställer vad.
         </p>
+        <ol class="flow-steps">
+          <li>Skapa grupp och dela länken</li>
+          <li>Lägg till öl (eller låt admin välja)</li>
+          <li>Rösta och ange antal per person</li>
+          <li>Beställ hos Systembolaget</li>
+        </ol>
         <p class="disclaimer">
           Endast 20+. Köp sker hos Systembolaget, inte mellan er privat.
         </p>
@@ -72,8 +78,35 @@
         </div>
       </section>
 
+      <section class="win" id="join-panel" hidden>
+        <div class="title-bar">
+          <span class="title-bar-text">Gå med i grupp</span>
+        </div>
+        <div class="win-body">
+          <p class="hint">Klistra in länken du fick av gruppens admin.</p>
+          <form id="join-form">
+            <div class="field">
+              <label class="field-label" for="join-url">Grupplänk</label>
+              <input
+                id="join-url"
+                name="url"
+                type="url"
+                required
+                placeholder="https://…/g/… eller group.html?id=…"
+                data-required-msg="Klistra in en grupplänk."
+              />
+            </div>
+            <div class="btn-row">
+              <button type="submit" class="primary">Gå med</button>
+              <button type="button" id="join-cancel">Avbryt</button>
+            </div>
+          </form>
+          <p id="join-error" class="error" hidden></p>
+        </div>
+      </section>
+
       <p class="footnote">
-        <a href="#" id="join-link">Har du redan en inbjudningslänk?</a>
+        <a href="#" id="join-link" aria-expanded="false" aria-controls="join-panel">Har du redan en inbjudningslänk?</a>
       </p>
     </main>
     <script type="module" src="js/index.js"></script>
