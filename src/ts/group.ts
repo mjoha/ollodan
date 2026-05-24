@@ -9,8 +9,9 @@ import {
   type GroupProduct,
 } from "./api.js";
 import { escapeHtml } from "./escape.js";
-import { parseGroupIdFromLocation } from "./groupId.js";
+import { buildGroupUrl, parseGroupIdFromLocation } from "./groupId.js";
 import {
+  clearSession,
   getAdminKey,
   getSession,
   setAdminKey,
@@ -18,6 +19,15 @@ import {
   type MemberSession,
 } from "./storage.js";
 import { win } from "./ui.js";
+import { wireRequiredFields } from "./validate.js";
+import { escapeAttr } from "./escape.js";
+
+const PHASES = [
+  { key: "Collecting", label: "1. Förslag" },
+  { key: "Voting", label: "2. Rösta" },
+  { key: "Ordering", label: "3. Antal" },
+  { key: "Closed", label: "4. Beställ" },
+] as const;
 
 const params = new URLSearchParams(window.location.search);
 const groupId = parseGroupIdFromLocation();
@@ -30,6 +40,49 @@ let session: MemberSession | null = null;
 let adminKey: string | null = null;
 let pollTimer: number | null = null;
 let group: GroupData | null = null;
+let lastGroupSnapshot = "";
+
+interface FormDrafts {
+  swishNote?: string;
+  productUrl?: string;
+  productName?: string;
+  productPrice?: string;
+  quantity?: string;
+  displayName?: string;
+}
+
+let pendingDrafts: FormDrafts = {};
+
+function captureDrafts(): FormDrafts {
+  const d: FormDrafts = {};
+  const swish = document.getElementById("swish-note") as HTMLTextAreaElement | null;
+  if (swish) d.swishNote = swish.value;
+
+  const url = document.querySelector(
+    '#add-product-form input[name="url"]'
+  ) as HTMLInputElement | null;
+  if (url) d.productUrl = url.value;
+
+  const pname = document.querySelector(
+    '#add-product-form input[name="name"]'
+  ) as HTMLInputElement | null;
+  if (pname) d.productName = pname.value;
+
+  const pprice = document.querySelector(
+    '#add-product-form input[name="price"]'
+  ) as HTMLInputElement | null;
+  if (pprice) d.productPrice = pprice.value;
+
+  const qty = document.querySelector(
+    '#order-form input[name="quantity"]'
+  ) as HTMLInputElement | null;
+  if (qty) d.quantity = qty.value;
+
+  const display = document.getElementById("display-name") as HTMLInputElement | null;
+  if (display) d.displayName = display.value;
+
+  return d;
+}
 
 function showError(msg: string) {
   errorBanner.textContent = msg;
@@ -48,8 +101,16 @@ async function init() {
     app.innerHTML = win(
       "Ingen grupp",
       `<p class="hint">Öppna en inbjudningslänk (<code>/g/…</code>) eller skapa en grupp.</p>
-       <p><a href="index.html" class="button primary">Till startsidan</a></p>`
+       <p><a href="index.html" class="button primary">Till Öl-lödan</a></p>`
     );
+    return;
+  }
+
+  if (params.get("leave") === "1") {
+    clearSession(groupId);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("leave");
+    window.location.replace(url.pathname + url.search);
     return;
   }
 
@@ -65,7 +126,13 @@ async function init() {
 
 async function refresh() {
   try {
-    group = await getGroup(groupId!);
+    const data = await getGroup(groupId!);
+    const snapshot = JSON.stringify(data);
+    if (snapshot === lastGroupSnapshot) return;
+
+    pendingDrafts = captureDrafts();
+    lastGroupSnapshot = snapshot;
+    group = data;
     render();
   } catch (err) {
     app.innerHTML = win(
@@ -78,44 +145,37 @@ async function refresh() {
 function render() {
   if (!group) return;
 
-  const phaseLabel: Record<string, string> = {
-    Collecting: "Samla förslag",
-    Voting: "Röstning",
-    Ordering: "Beställ antal",
-    Closed: "Avslutad",
-  };
+  const drafts = pendingDrafts;
+  pendingDrafts = {};
 
   let html = `
-    <header class="group-header">
-      <div class="title-bar">
-        <span class="title-bar-text">${escapeHtml(group.name)}</span>
-      </div>
-      <div class="group-header-meta">
-        <span>Fas</span>
-        <span class="phase-badge">${phaseLabel[group.phase] ?? group.phase}</span>
-      </div>
-    </header>
+    ${win(
+      "Grupp",
+      `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>`
+    )}
+    ${renderPhaseWindow(group.phase)}
   `;
 
   if (!session) {
-    html += renderJoinForm();
+    html += renderJoinForm(drafts);
   } else {
-    html += `<p class="you">Användare: <strong>${escapeHtml(session.displayName)}</strong></p>`;
+    html += `<p class="you">Användare: <strong>${escapeHtml(session.displayName)}</strong>
+      · <a href="?leave=1">Byt användare</a></p>`;
   }
 
   if (adminKey) {
-    html += renderAdminPanel();
+    html += renderAdminPanel(drafts);
   }
 
   switch (group.phase) {
     case "Collecting":
-      html += renderCollecting();
+      html += renderCollecting(drafts);
       break;
     case "Voting":
       html += renderVoting();
       break;
     case "Ordering":
-      html += renderOrdering();
+      html += renderOrdering(drafts);
       break;
     case "Closed":
       html += renderClosed();
@@ -126,23 +186,62 @@ function render() {
 
   app.innerHTML = html;
   bindEvents();
+  wireRequiredFields(app);
 }
 
-function renderJoinForm(): string {
+function renderPhaseWindow(currentPhase: string): string {
+  const items = PHASES.map(
+    (p) =>
+      `<li class="phase-step${p.key === currentPhase ? " phase-step-current" : ""}">${p.label}</li>`
+  ).join("");
+
+  return win("Fas", `<ul class="phase-steps">${items}</ul>`);
+}
+
+function renderJoinForm(drafts: FormDrafts): string {
+  const value = drafts.displayName ?? "";
   return win(
     "Gå med",
     `<form id="join-form">
       <div class="field">
         <label class="field-label" for="display-name">Namn</label>
-        <input id="display-name" name="displayName" type="text" required maxlength="50" placeholder="t.ex. Erik" />
+        <input id="display-name" name="displayName" type="text" required maxlength="50" placeholder="t.ex. Erik" value="${escapeAttr(value)}" data-required-msg="Ange ditt namn." />
       </div>
       <button type="submit" class="primary">OK</button>
     </form>`
   );
 }
 
-function renderAdminPanel(): string {
+function renderAdminLinks(): string {
+  if (!groupId || !adminKey) return "";
+
+  const participantUrl =
+    window.location.origin + buildGroupUrl(groupId);
+  const adminUrl =
+    window.location.origin + buildGroupUrl(groupId, adminKey);
+
+  return `
+    <div class="field">
+      <label class="field-label">Deltagarlänk</label>
+      <div class="link-row">
+        <input type="text" readonly value="${escapeAttr(participantUrl)}" id="participant-url" />
+        <button type="button" data-copy="participant-url">Kopiera</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">Admin-länk (spara)</label>
+      <div class="link-row">
+        <input type="text" readonly value="${escapeAttr(adminUrl)}" id="admin-url" />
+        <button type="button" data-copy="admin-url">Kopiera</button>
+      </div>
+    </div>`;
+}
+
+function renderAdminPanel(drafts: FormDrafts): string {
   if (!group) return "";
+
+  const swishValue =
+    drafts.swishNote !== undefined ? drafts.swishNote : (group.swishNote ?? "");
 
   const tieBreak =
     group.needsTieBreak && group.phase === "Voting"
@@ -172,18 +271,19 @@ function renderAdminPanel(): string {
 
   return win(
     "Administration",
-    `${tieBreak}
+    `${renderAdminLinks()}
+     ${tieBreak}
      <div class="admin-actions btn-row">${actions}</div>
      <div class="field">
        <label class="field-label" for="swish-note">Betalningsinfo</label>
-       <textarea id="swish-note" rows="2" placeholder="Valfritt">${escapeHtml(group.swishNote ?? "")}</textarea>
+       <textarea id="swish-note" rows="2" placeholder="Valfritt">${escapeHtml(swishValue)}</textarea>
      </div>
      <button type="button" id="btn-save-swish">Spara</button>`,
     "admin"
   );
 }
 
-function renderCollecting(): string {
+function renderCollecting(drafts: FormDrafts): string {
   if (!group) return "";
 
   const addForm = session
@@ -191,11 +291,11 @@ function renderCollecting(): string {
         "Lägg till öl",
         `<p class="hint">Klistra in systembolaget.se-länk</p>
          <form id="add-product-form">
-           <input type="url" name="url" required placeholder="https://www.systembolaget.se/produkt/..." />
+           <input type="url" name="url" required placeholder="https://www.systembolaget.se/produkt/..." value="${escapeAttr(drafts.productUrl ?? "")}" data-required-msg="Klistra in en produktlänk." />
            <details class="manual-fallback">
              <summary>Manuell inmatning</summary>
-             <input type="text" name="name" placeholder="Namn" />
-             <input type="number" name="price" placeholder="Pris (kr)" min="0" step="1" />
+             <input type="text" name="name" placeholder="Namn" value="${escapeAttr(drafts.productName ?? "")}" />
+             <input type="number" name="price" placeholder="Pris (kr)" min="0" step="1" value="${escapeAttr(drafts.productPrice ?? "")}" />
            </details>
            <button type="submit">Lägg till</button>
          </form>`
@@ -239,21 +339,41 @@ function renderVoting(): string {
   return win("Röstning", list);
 }
 
-function renderOrdering(): string {
+function renderOrdering(drafts: FormDrafts): string {
   if (!group || !group.winningProduct) return "";
 
   const wp = group.winningProduct;
   const myLine = session
     ? group.orderLines.find((o) => o.memberId === session!.memberId)
     : null;
-  const myQty = myLine?.quantity ?? 0;
+  const myQty =
+    drafts.quantity !== undefined
+      ? Number(drafts.quantity) || 0
+      : (myLine?.quantity ?? 0);
+
+  const min = group.minimumOrderQuantity;
+  const req = group.requestedTotalQuantity;
+  const adj = group.adjustedTotalQuantity;
+  let orderNote = "Ingen har angett antal.";
+  if (req > 0) {
+    if (req !== adj) {
+      orderNote = `${req} önskade → <strong>${adj} st</strong> beställs (min ${min} st).`;
+    } else if (group.isOrderFulfilled) {
+      orderNote =
+        min === 1
+          ? `${adj} st totalt.`
+          : `${group.orderMultiples}×${min} st = ${adj} st — ordern uppfyller minimiantalet.`;
+    } else {
+      orderNote = `${adj} st — ${group.remainderUntilNextMultiple} st till nästa minimum (${min} st).`;
+    }
+  }
 
   const kolliNote =
-    group.totalQuantity === 0
-      ? "Ingen har angett antal."
-      : group.remainderUntilNextCase === 0
-        ? `${group.casesOf24} kolli (24 st).`
-        : `${group.totalQuantity} st — ${group.remainderUntilNextCase} st till nästa kolli.`;
+    req > 0 && min > 1
+      ? group.remainderUntilRequestedTarget === 0
+        ? `Era önskemål (${req} st) når ${group.nextRequestedTarget} st.`
+        : `${group.remainderUntilRequestedTarget} st till nästa kolli (${group.nextRequestedTarget} st).`
+      : "";
 
   const winner = win(
     "Vald öl",
@@ -261,7 +381,7 @@ function renderOrdering(): string {
       ${productImage(wp)}
       <div class="product-info">
         <strong>${escapeHtml(wp.name)}</strong>
-        <span>${formatPrice(wp.price)} / st</span>
+        <span>${formatPrice(wp.price)} / st · min ${wp.minimumOrderQuantity} st${wp.caseSize && wp.caseSize > wp.minimumOrderQuantity ? ` · leverantörskolli ${wp.caseSize} st` : ""}</span>
       </div>
     </div>`
   );
@@ -283,15 +403,19 @@ function renderOrdering(): string {
 
   const overview = win(
     "Översikt",
-    `<p class="kolli">${kolliNote}</p>
-     <p class="status-line">Totalt ${group.totalQuantity} st · ${formatPrice(group.totalCost)}</p>
+    `<p class="kolli">${orderNote}</p>
+     ${kolliNote ? `<p class="kolli kolli-secondary">${kolliNote}</p>` : ""}
+     <p class="status-line">Beställs <strong>${adj}</strong> st · ${formatPrice(group.totalCost)}</p>
      <ul class="order-summary">
        ${group.orderLines
-         .filter((o) => o.quantity > 0)
-         .map(
-           (o) =>
-             `<li><span>${escapeHtml(o.displayName)}</span><span>${o.quantity} st · ${formatPrice(o.lineTotal)}</span></li>`
-         )
+         .filter((o) => o.quantity > 0 || o.adjustedQuantity > 0)
+         .map((o) => {
+           const qtyLabel =
+             o.quantity !== o.adjustedQuantity
+               ? `${o.quantity} → ${o.adjustedQuantity} st`
+               : `${o.adjustedQuantity} st`;
+           return `<li><span>${escapeHtml(o.displayName)}</span><span>${qtyLabel} · ${formatPrice(o.lineTotal)}</span></li>`;
+         })
          .join("") || '<li class="muted">—</li>'}
      </ul>
      ${group.swishNote ? `<p class="swish-note">${escapeHtml(group.swishNote)}</p>` : ""}`
@@ -305,13 +429,13 @@ function renderClosed(): string {
   return win(
     "Sammanfattning",
     `${group.winningProduct ? `<p class="status-line">${escapeHtml(group.winningProduct.name)} · ${formatPrice(group.winningProduct.price)}/st</p>` : ""}
-     <p>Totalt <strong>${group.totalQuantity}</strong> st · <strong>${formatPrice(group.totalCost)}</strong></p>
+     <p>Totalt <strong>${group.adjustedTotalQuantity}</strong> st beställs · <strong>${formatPrice(group.totalCost)}</strong></p>
      <ul class="order-summary">
        ${group.orderLines
-         .filter((o) => o.quantity > 0)
+         .filter((o) => o.adjustedQuantity > 0)
          .map(
            (o) =>
-             `<li><span>${escapeHtml(o.displayName)}</span><span>${o.quantity} st · ${formatPrice(o.lineTotal)}</span></li>`
+             `<li><span>${escapeHtml(o.displayName)}</span><span>${o.adjustedQuantity} st · ${formatPrice(o.lineTotal)}</span></li>`
          )
          .join("")}
      </ul>
@@ -456,6 +580,18 @@ function bindEvents() {
     } catch (err) {
       showError(err instanceof Error ? err.message : "Kunde inte spara");
     }
+  });
+
+  app.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = (btn as HTMLElement).dataset.copy!;
+      const input = document.getElementById(id) as HTMLInputElement;
+      navigator.clipboard.writeText(input.value);
+      (btn as HTMLButtonElement).textContent = "OK";
+      setTimeout(() => {
+        (btn as HTMLButtonElement).textContent = "Kopiera";
+      }, 1500);
+    });
   });
 
   document.querySelectorAll(".pick-winner").forEach((btn) => {

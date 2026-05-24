@@ -1,10 +1,16 @@
 using Ollodan.Api.Entities;
+using Ollodan.Api.Services;
 
 namespace Ollodan.Api.Dtos;
 
-public record CreateGroupRequest(string Name);
+public record CreateGroupRequest(string Name, string AdminDisplayName);
 
-public record CreateGroupResponse(Guid GroupId, string AdminSecret);
+public record CreateGroupResponse(
+    Guid GroupId,
+    string AdminSecret,
+    Guid MemberId,
+    string SessionToken,
+    string DisplayName);
 
 public record JoinRequest(string DisplayName);
 
@@ -25,7 +31,9 @@ public record ResolvedProductDto(
     string Url,
     string Name,
     decimal Price,
-    string? ImageUrl);
+    string? ImageUrl,
+    int MinimumOrderQuantity,
+    int? CaseSize);
 
 public record MemberDto(Guid Id, string DisplayName);
 
@@ -36,13 +44,20 @@ public record ProductDto(
     string Name,
     decimal Price,
     string? ImageUrl,
+    int MinimumOrderQuantity,
+    int? CaseSize,
     Guid? AddedByMemberId,
     string? AddedByName,
     int VoteCount);
 
 public record VoteDto(Guid MemberId, Guid ProductId);
 
-public record OrderLineDto(Guid MemberId, string DisplayName, int Quantity, decimal LineTotal);
+public record OrderLineDto(
+    Guid MemberId,
+    string DisplayName,
+    int Quantity,
+    int AdjustedQuantity,
+    decimal LineTotal);
 
 public record GroupDto(
     Guid Id,
@@ -55,10 +70,16 @@ public record GroupDto(
     IReadOnlyList<ProductDto> Products,
     IReadOnlyList<VoteDto> Votes,
     IReadOnlyList<OrderLineDto> OrderLines,
-    int TotalQuantity,
+    int MinimumOrderQuantity,
+    int? CaseSize,
+    int RequestedTotalQuantity,
+    int AdjustedTotalQuantity,
     decimal TotalCost,
-    int CasesOf24,
-    int RemainderUntilNextCase,
+    int OrderMultiples,
+    int RemainderUntilNextMultiple,
+    int NextRequestedTarget,
+    int RemainderUntilRequestedTarget,
+    bool IsOrderFulfilled,
     bool NeedsTieBreak);
 
 public static class GroupDtoMapper
@@ -81,25 +102,41 @@ public static class GroupDtoMapper
                 p.Name,
                 p.Price,
                 p.ImageUrl,
+                p.MinimumOrderQuantity,
+                p.CaseSize,
                 p.AddedByMemberId,
                 p.AddedByMemberId is { } mid ? memberNames.GetValueOrDefault(mid) : null,
                 voteCounts.GetValueOrDefault(p.Id)))
             .ToList();
 
+        var minOrder = group.WinningProduct?.MinimumOrderQuantity ?? 1;
+        var caseSize = group.WinningProduct?.CaseSize;
+
+        var rawLines = group.OrderLines
+            .Select(o => (o.MemberId, o.Quantity))
+            .ToList();
+        var adjusted = OrderAllocation.Allocate(rawLines, minOrder);
+
+        var price = group.WinningProduct?.Price ?? 0;
         var orderLines = group.OrderLines
-            .Select(o =>
-            {
-                var price = group.WinningProduct?.Price ?? 0;
-                return new OrderLineDto(
-                    o.MemberId,
-                    memberNames.GetValueOrDefault(o.MemberId, "?"),
-                    o.Quantity,
-                    o.Quantity * price);
-            })
+            .Select(o => new OrderLineDto(
+                o.MemberId,
+                memberNames.GetValueOrDefault(o.MemberId, "?"),
+                o.Quantity,
+                adjusted.GetValueOrDefault(o.MemberId),
+                adjusted.GetValueOrDefault(o.MemberId) * price))
             .ToList();
 
-        var totalQty = orderLines.Sum(o => o.Quantity);
+        var requestedTotal = orderLines.Sum(o => o.Quantity);
+        var adjustedTotal = orderLines.Sum(o => o.AdjustedQuantity);
         var totalCost = orderLines.Sum(o => o.LineTotal);
+        var orderMultiples = minOrder > 0 ? adjustedTotal / minOrder : 0;
+        var remainderMin = adjustedTotal == 0 ? minOrder : (minOrder - (adjustedTotal % minOrder)) % minOrder;
+        var nextRequestedTarget = requestedTotal <= 0
+            ? 0
+            : ((requestedTotal + minOrder - 1) / minOrder) * minOrder;
+        var remainderUntilRequestedTarget = nextRequestedTarget - requestedTotal;
+        var isOrderFulfilled = requestedTotal > 0 && adjustedTotal >= minOrder && adjustedTotal % minOrder == 0;
 
         var needsTieBreak = group.Phase == GroupPhase.Voting
             && products.Count > 0
@@ -110,7 +147,18 @@ public static class GroupDtoMapper
         if (group.WinningProduct is { } wp)
         {
             winning = products.FirstOrDefault(p => p.Id == wp.Id)
-                ?? new ProductDto(wp.Id, wp.SystembolagetProductId, wp.Url, wp.Name, wp.Price, wp.ImageUrl, wp.AddedByMemberId, null, 0);
+                ?? new ProductDto(
+                    wp.Id,
+                    wp.SystembolagetProductId,
+                    wp.Url,
+                    wp.Name,
+                    wp.Price,
+                    wp.ImageUrl,
+                    wp.MinimumOrderQuantity,
+                    wp.CaseSize,
+                    wp.AddedByMemberId,
+                    null,
+                    0);
         }
 
         return new GroupDto(
@@ -124,10 +172,16 @@ public static class GroupDtoMapper
             products,
             group.Votes.Select(v => new VoteDto(v.MemberId, v.ProductId)).ToList(),
             orderLines,
-            totalQty,
+            minOrder,
+            caseSize,
+            requestedTotal,
+            adjustedTotal,
             totalCost,
-            totalQty / 24,
-            totalQty == 0 ? 24 : (24 - (totalQty % 24)) % 24,
+            orderMultiples,
+            remainderMin,
+            nextRequestedTarget,
+            remainderUntilRequestedTarget,
+            isOrderFulfilled,
             needsTieBreak);
     }
 

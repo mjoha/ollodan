@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ollodan</title>
+    <title>Öl-lödan</title>
     <link rel="stylesheet" href="css/main.css" />
   </head>
   <body>
     <main class="wrap">
       <header class="page-header">
-        <h1>Ollodan</h1>
+        <h1>Öl-lödan</h1>
         <p class="lede">
           Koordinera beställningsöl från Systembolaget. Samla förslag, rösta,
           fördela antal per kolli.
@@ -34,12 +34,24 @@
                 required
                 maxlength="100"
                 placeholder="t.ex. Fredagsöl maj"
+                data-required-msg="Ange ett gruppnamn."
               />
             </div>
-            <button type="submit" class="primary">Skapa</button>
+            <div class="field">
+              <label class="field-label" for="admin-name">Ditt namn (admin)</label>
+              <input
+                id="admin-name"
+                name="adminDisplayName"
+                type="text"
+                required
+                maxlength="50"
+                placeholder="t.ex. Erik"
+                data-required-msg="Ange ditt namn."
+              />
+            </div>
+            <button type="submit" class="primary" id="create-submit">Skapa</button>
           </form>
           <p id="create-error" class="error" hidden></p>
-          <div id="create-result" hidden></div>
         </div>
       </section>
 

@@ -32,3 +32,7 @@ export function setAdminKey(groupId: string, key: string): void {
 export function clearAdminKey(groupId: string): void {
   sessionStorage.removeItem(adminKey(groupId));
 }
+
+export function clearSession(groupId: string): void {
+  localStorage.removeItem(sessionKey(groupId));
+}

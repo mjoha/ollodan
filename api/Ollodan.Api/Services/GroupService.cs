@@ -17,20 +17,44 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             .Include(g => g.WinningProduct)
             .FirstOrDefaultAsync(g => g.Id == id, ct);
 
-    public async Task<CreateGroupResponse> CreateGroupAsync(string name, CancellationToken ct = default)
+    public async Task<CreateGroupResponse?> CreateGroupAsync(
+        string name,
+        string adminDisplayName,
+        CancellationToken ct = default)
     {
+        var groupName = name.Trim();
+        var adminName = adminDisplayName.Trim();
+        if (string.IsNullOrWhiteSpace(groupName) || groupName.Length > 100)
+            return null;
+        if (string.IsNullOrWhiteSpace(adminName) || adminName.Length > 50)
+            return null;
+
         var group = new Group
         {
             Id = Guid.NewGuid(),
-            Name = name.Trim(),
+            Name = groupName,
             AdminSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
             Phase = GroupPhase.Collecting
         };
 
+        var admin = new Member
+        {
+            Id = Guid.NewGuid(),
+            GroupId = group.Id,
+            DisplayName = adminName,
+            SessionToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        };
+
         db.Groups.Add(group);
+        db.Members.Add(admin);
         await db.SaveChangesAsync(ct);
 
-        return new CreateGroupResponse(group.Id, group.AdminSecret);
+        return new CreateGroupResponse(
+            group.Id,
+            group.AdminSecret,
+            admin.Id,
+            admin.SessionToken,
+            admin.DisplayName);
     }
 
     public async Task<JoinResponse?> JoinAsync(Guid groupId, string displayName, CancellationToken ct = default)
@@ -93,6 +117,8 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             Url = url,
             Name = name,
             Price = price,
+            MinimumOrderQuantity = resolved?.MinimumOrderQuantity ?? 1,
+            CaseSize = resolved?.CaseSize,
             ImageUrl = resolved?.ImageUrl,
             AddedByMemberId = member.Id
         };

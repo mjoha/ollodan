@@ -7,6 +7,8 @@ export interface GroupProduct {
   name: string;
   price: number;
   imageUrl: string | null;
+  minimumOrderQuantity: number;
+  caseSize: number | null;
   addedByMemberId: string | null;
   addedByName: string | null;
   voteCount: number;
@@ -26,12 +28,19 @@ export interface GroupData {
     memberId: string;
     displayName: string;
     quantity: number;
+    adjustedQuantity: number;
     lineTotal: number;
   }[];
-  totalQuantity: number;
+  minimumOrderQuantity: number;
+  caseSize: number | null;
+  requestedTotalQuantity: number;
+  adjustedTotalQuantity: number;
   totalCost: number;
-  casesOf24: number;
-  remainderUntilNextCase: number;
+  orderMultiples: number;
+  remainderUntilNextMultiple: number;
+  nextRequestedTarget: number;
+  remainderUntilRequestedTarget: number;
+  isOrderFulfilled: boolean;
   needsTieBreak: boolean;
 }
 
@@ -74,10 +83,16 @@ export async function adminFetch(
   if (!res.ok) throw new Error(await parseError(res));
 }
 
-export function createGroup(name: string) {
-  return apiFetch<{ groupId: string; adminSecret: string }>("/api/groups", {
+export function createGroup(name: string, adminDisplayName: string) {
+  return apiFetch<{
+    groupId: string;
+    adminSecret: string;
+    memberId: string;
+    sessionToken: string;
+    displayName: string;
+  }>("/api/groups", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, adminDisplayName }),
   });
 }
 

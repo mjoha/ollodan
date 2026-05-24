@@ -15,10 +15,10 @@ public class GroupsController(GroupService groups) : ControllerBase
     [EnableRateLimiting("write")]
     public async Task<ActionResult<CreateGroupResponse>> Create([FromBody] CreateGroupRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
-            return BadRequest(new { error = "Ange ett gruppnamn (max 100 tecken)." });
+        var result = await groups.CreateGroupAsync(request.Name, request.AdminDisplayName, ct);
+        if (result is null)
+            return BadRequest(new { error = "Ange gruppnamn och admin-namn (max 100 / 50 tecken)." });
 
-        var result = await groups.CreateGroupAsync(request.Name, ct);
         return Ok(result);
     }
 
@@ -60,6 +60,8 @@ public class GroupsController(GroupService groups) : ControllerBase
             product.Name,
             product.Price,
             product.ImageUrl,
+            product.MinimumOrderQuantity,
+            product.CaseSize,
             product.AddedByMemberId,
             member.DisplayName,
             0));

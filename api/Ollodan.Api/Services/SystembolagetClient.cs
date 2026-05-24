@@ -70,6 +70,7 @@ public partial class SystembolagetClient(HttpClient http, IMemoryCache cache, IL
                 : null;
 
             var price = ParsePriceFromHtml(html);
+            var (minOrder, caseSize) = ParseParcelQuantitiesFromHtml(html);
 
             if (string.IsNullOrWhiteSpace(name) && price is null)
                 return null;
@@ -79,7 +80,9 @@ public partial class SystembolagetClient(HttpClient http, IMemoryCache cache, IL
                 url,
                 string.IsNullOrWhiteSpace(name) ? $"Produkt {productId}" : name.Trim(),
                 price ?? 0,
-                image);
+                image,
+                minOrder,
+                caseSize);
         }
         catch (Exception ex)
         {
@@ -121,6 +124,34 @@ public partial class SystembolagetClient(HttpClient http, IMemoryCache cache, IL
 
         return null;
     }
+
+    private static (int MinimumOrderQuantity, int? CaseSize) ParseParcelQuantitiesFromHtml(string html)
+    {
+        var next = NextDataRegex().Match(html);
+        if (!next.Success)
+            return (1, null);
+
+        var chunk = next.Groups[1].Value;
+        var restricted = RestrictedParcelQuantityRegex().Match(chunk);
+        var supplyChain = SupplyChainParcelQuantityRegex().Match(chunk);
+
+        int? restrictedQty = restricted.Success ? int.Parse(restricted.Groups[1].Value) : null;
+        int? supplyQty = supplyChain.Success ? int.Parse(supplyChain.Groups[1].Value) : null;
+
+        var minOrder = restrictedQty ?? supplyQty ?? 1;
+        int? caseSize = supplyQty is { } sc && sc != minOrder ? sc : null;
+
+        return (minOrder, caseSize);
+    }
+
+    [GeneratedRegex(@"<script id=""__NEXT_DATA__""[^>]*>(.*?)</script>", RegexOptions.Singleline)]
+    private static partial Regex NextDataRegex();
+
+    [GeneratedRegex(@"""restrictedParcelQuantity""\s*:\s*(\d+)")]
+    private static partial Regex RestrictedParcelQuantityRegex();
+
+    [GeneratedRegex(@"""supplyChainRestrictedParcelQuantity""\s*:\s*(\d+)")]
+    private static partial Regex SupplyChainParcelQuantityRegex();
 
     [GeneratedRegex(@"/produkt(?:/[^/]+)*/(\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex ProductIdPattern();

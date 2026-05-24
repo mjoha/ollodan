@@ -70,6 +70,31 @@ summary:focus-visible {
   max-width: 28rem;
   margin: 0 auto;
   padding: 1rem 0.75rem 2.5rem;
+  position: relative;
+}
+
+.page-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin: 0 0 0.5rem;
+}
+
+.home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.45rem;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.home-icon {
+  display: block;
+  shape-rendering: crispEdges;
 }
 
 .page-header {
@@ -168,6 +193,12 @@ summary:focus-visible {
   margin: 0 0 0.35rem;
 }
 
+.kolli-secondary {
+  font-weight: 400;
+  font-size: var(--size-sm);
+  color: var(--muted);
+}
+
 .you {
   font-size: var(--size-sm);
   margin: 0 0 0.5rem;
@@ -199,6 +230,18 @@ textarea {
   background: var(--window);
   border: 2px solid;
   border-color: var(--shadow) var(--light) var(--light) var(--shadow);
+}
+
+input:user-invalid,
+textarea:user-invalid {
+  border-color: var(--error) var(--light) var(--light) var(--error);
+  background: #fff8f8;
+}
+
+input:focus:user-invalid,
+textarea:focus:user-invalid {
+  outline: 1px dotted var(--error);
+  outline-offset: 1px;
 }
 
 textarea {
@@ -278,37 +321,44 @@ button.primary:not(:disabled) {
   margin-bottom: 0;
 }
 
-/* —— Group header (main window title area) —— */
+/* —— Inset fields (read-only / listbox) —— */
 
-.group-header {
-  margin-bottom: 0.65rem;
+.inset-panel {
+  padding: 0.3rem 0.4rem;
+  margin-bottom: 0.35rem;
   border: 2px solid;
-  border-color: var(--light) var(--dark) var(--dark) var(--light);
+  border-color: var(--shadow) var(--light) var(--light) var(--shadow);
+  background: var(--window);
 }
 
-.group-header .title-bar {
-  font-family: var(--font-display);
-  font-size: var(--size-lg);
+.readonly-field {
   font-weight: 700;
-  padding: 0.15rem 0.4rem;
+  font-size: var(--size);
+  line-height: 1.35;
 }
 
-.group-header-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.35rem 0.5rem;
-  background: var(--surface);
-  font-size: var(--size-sm);
-}
-
-.phase-badge {
-  padding: 0.1rem 0.35rem;
+.phase-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   border: 1px solid var(--shadow);
   background: var(--window);
+}
+
+.phase-step {
+  padding: 0.2rem 0.4rem;
+  font-size: var(--size-sm);
+  border-bottom: 1px solid var(--face);
+}
+
+.phase-step:last-child {
+  border-bottom: none;
+}
+
+.phase-step-current {
+  background: var(--select-bg);
+  color: var(--select-fg);
   font-weight: 700;
-  white-space: nowrap;
 }
 
 /* —— Lists & products —— */

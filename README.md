@@ -19,6 +19,21 @@ Open **http://localhost:5210**. SQLite (`api/Ollodan.Api/ollodan.db`) is created
 
 Group links: `http://localhost:5210/g/{group-id}`
 
+### Test with multiple users locally
+
+Sessions are stored in **this browser’s** `localStorage` (per origin). That is why **two Incognito windows in Chrome still share one user** — Incognito uses one storage bucket for all Incognito tabs.
+
+Ways to simulate several people:
+
+| Method | Users |
+|--------|--------|
+| Normal window + one Incognito window | 2 |
+| Chrome + Firefox (or Edge) | 2+ |
+| Two Chrome **profiles** (Settings → Profiles) | 2+ |
+| Same browser: open group as user A, then visit `?leave=1` on the group URL to join as someone else | 2+ on one browser |
+
+Example: admin in Chrome at `http://localhost:5210/g/{id}?key=…`, friend in Firefox at `http://localhost:5210/g/{id}` (participant link only).
+
 ### Docker
 
 ```bash
