@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Ollodan.Api.Data;
 
@@ -10,9 +11,11 @@ using Ollodan.Api.Data;
 namespace Ollodan.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260524164939_AddOrderHistory")]
+    partial class AddOrderHistory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -143,10 +146,6 @@ namespace Ollodan.Api.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<decimal>("ProductPrice")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProductUrl")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("RequestedTotalQuantity")

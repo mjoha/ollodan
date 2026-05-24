@@ -18,4 +18,5 @@ public class Group
     public ICollection<Product> Products { get; set; } = [];
     public ICollection<Vote> Votes { get; set; } = [];
     public ICollection<OrderLine> OrderLines { get; set; } = [];
+    public ICollection<OrderRound> OrderRounds { get; set; } = [];
 }

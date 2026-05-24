@@ -65,6 +65,22 @@ public record OrderLineDto(
     Guid? ChosenProductId,
     string? ChosenProductName);
 
+public record OrderRoundLineDto(
+    string DisplayName,
+    int Quantity,
+    int AdjustedQuantity,
+    decimal LineTotal);
+
+public record OrderRoundDto(
+    int RoundNumber,
+    DateTime CompletedAt,
+    string ProductName,
+    string ProductUrl,
+    decimal ProductPrice,
+    int AdjustedTotalQuantity,
+    decimal TotalCost,
+    IReadOnlyList<OrderRoundLineDto> Lines);
+
 public record GroupDto(
     Guid Id,
     string Name,
@@ -89,7 +105,8 @@ public record GroupDto(
     int NextRequestedTarget,
     int RemainderUntilRequestedTarget,
     bool IsOrderFulfilled,
-    bool NeedsTieBreak);
+    bool NeedsTieBreak,
+    IReadOnlyList<OrderRoundDto> OrderHistory);
 
 public static class GroupDtoMapper
 {
@@ -148,7 +165,9 @@ public static class GroupDtoMapper
             ? 0
             : ((requestedTotal + minOrder - 1) / minOrder) * minOrder;
         var remainderUntilRequestedTarget = nextRequestedTarget - requestedTotal;
-        var isOrderFulfilled = requestedTotal > 0 && adjustedTotal >= minOrder && adjustedTotal % minOrder == 0;
+        var isOrderFulfilled = requestedTotal >= minOrder
+            && adjustedTotal >= minOrder
+            && adjustedTotal % minOrder == 0;
 
         var needsTieBreak = group.AllowSuggestions
             && group.Phase == GroupPhase.Voting
@@ -198,7 +217,26 @@ public static class GroupDtoMapper
             nextRequestedTarget,
             remainderUntilRequestedTarget,
             isOrderFulfilled,
-            needsTieBreak);
+            needsTieBreak,
+            group.OrderRounds
+                .OrderByDescending(r => r.RoundNumber)
+                .Select(r => new OrderRoundDto(
+                    r.RoundNumber,
+                    r.CompletedAt,
+                    r.ProductName,
+                    r.ProductUrl,
+                    r.ProductPrice,
+                    r.AdjustedTotalQuantity,
+                    r.TotalCost,
+                    r.Lines
+                        .OrderBy(l => l.DisplayName)
+                        .Select(l => new OrderRoundLineDto(
+                            l.DisplayName,
+                            l.Quantity,
+                            l.AdjustedQuantity,
+                            l.LineTotal))
+                        .ToList()))
+                .ToList());
     }
 
     private static int GetTopVoteCount(IReadOnlyList<ProductDto> products) =>

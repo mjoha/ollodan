@@ -19,9 +19,12 @@ public static class OrderAllocation
             return result;
 
         var requestedTotal = withQty.Sum(l => l.Quantity);
+        if (requestedTotal < min)
+            return result;
+
         var targetTotal = requestedTotal / min * min;
         if (targetTotal < min)
-            targetTotal = min;
+            return result;
 
         var shares = withQty
             .Select(l => (

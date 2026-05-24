@@ -582,6 +582,49 @@ button.primary:not(:disabled) {
   font-weight: 700;
 }
 
+/* —— Order history —— */
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-round {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--shadow);
+}
+
+.history-round:last-child {
+  border-bottom: none;
+}
+
+.history-round-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+  font-size: var(--size-sm);
+}
+
+.history-date {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.history-beer {
+  margin: 0 0 0.15rem;
+  font-size: var(--size-sm);
+}
+
+.admin-close-hint {
+  margin: 0 0 0.35rem;
+}
+
+.history-lines {
+  margin-top: 0.25rem;
+}
+
 /* —— Alerts —— */
 
 .error-banner {

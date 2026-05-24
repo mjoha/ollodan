@@ -188,6 +188,7 @@ function render() {
   }
 
   html += renderMembers();
+  html += renderOrderHistory();
 
   app.innerHTML = html;
   bindEvents();
@@ -273,7 +274,11 @@ function renderAdminPanel(): string {
     const closeLabel = group.isRepeating
       ? "Bekräfta beställning och starta om"
       : "Stäng order";
-    actions = `<button type="button" id="btn-close" class="primary">${closeLabel}</button>`;
+    const closeDisabled = group.isOrderFulfilled ? "" : " disabled";
+    const closeHint = group.isOrderFulfilled
+      ? ""
+      : '<p class="hint admin-close-hint">Minimiantalet måste vara uppnått innan beställningen kan avslutas.</p>';
+    actions = `${closeHint}<button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>`;
   }
 
   return win(
@@ -427,24 +432,22 @@ function renderOrdering(drafts: FormDrafts): string {
   const adj = group.adjustedTotalQuantity;
   let orderNote = "Ingen har angett antal.";
   if (req > 0) {
-    if (req !== adj) {
+    if (req < min) {
+      orderNote = `Minimiantalet ${min} st är inte uppnått (${req} st önskade).`;
+    } else if (group.isOrderFulfilled && req !== adj) {
       orderNote = `${req} önskade → <strong>${adj} st</strong> beställs (min ${min} st).`;
     } else if (group.isOrderFulfilled) {
       orderNote =
         min === 1
           ? `${adj} st totalt.`
-          : `${group.orderMultiples}×${min} st = ${adj} st — ordern uppfyller minimiantalet.`;
+          : `${group.orderMultiples}×${min} st = ${adj} st — minimiantalet uppfyllt.`;
+    } else if (req !== adj) {
+      orderNote = `${req} önskade → <strong>${adj} st</strong> justeras (min ${min} st).`;
     } else {
-      orderNote = `${adj} st — ${group.remainderUntilNextMultiple} st till nästa minimum (${min} st).`;
+      const target = Math.ceil(req / min) * min;
+      orderNote = `${target - req} st kvar till ${target} st (min ${min} st).`;
     }
   }
-
-  const kolliNote =
-    req > 0 && min > 1
-      ? group.remainderUntilRequestedTarget === 0
-        ? `Era önskemål (${req} st) når ${group.nextRequestedTarget} st.`
-        : `${group.remainderUntilRequestedTarget} st till nästa kolli (${group.nextRequestedTarget} st).`
-      : "";
 
   const winner = win(
     "Vald öl",
@@ -472,11 +475,14 @@ function renderOrdering(drafts: FormDrafts): string {
       )
     : "";
 
+  const statusLine = !group.isOrderFulfilled && req > 0
+    ? `<p class="status-line muted">Beställningen kan inte avslutas ännu.</p>`
+    : `<p class="status-line">Justeras till <strong>${adj}</strong> st · ${formatPrice(group.totalCost)}</p>`;
+
   const overview = win(
     "Översikt",
     `<p class="kolli">${orderNote}</p>
-     ${kolliNote ? `<p class="kolli kolli-secondary">${kolliNote}</p>` : ""}
-     <p class="status-line">Beställs <strong>${adj}</strong> st · ${formatPrice(group.totalCost)}</p>
+     ${statusLine}
      <ul class="order-summary">
        ${group.orderLines
          .filter((o) => o.quantity > 0 || o.adjustedQuantity > 0)
@@ -497,9 +503,12 @@ function renderOrdering(drafts: FormDrafts): string {
 
 function renderClosed(): string {
   if (!group) return "";
-  const beerLine = group.winningProduct
-    ? `<p class="status-line">${escapeHtml(group.winningProduct.name)} · ${formatPrice(group.winningProduct.price)}/st</p>`
-    : "";
+  const last = group.orderHistory[0];
+  const beerLine = last
+    ? `<p class="status-line">${escapeHtml(last.productName)} · ${formatPrice(last.productPrice)}/st</p>`
+    : group.winningProduct
+      ? `<p class="status-line">${escapeHtml(group.winningProduct.name)} · ${formatPrice(group.winningProduct.price)}/st</p>`
+      : "";
   return win(
     "Sammanfattning",
     `${beerLine}
@@ -526,6 +535,54 @@ function renderMembers(): string {
     })
     .join("");
   return win(`Deltagare (${group.members.length})`, `<p class="member-chips">${chips}</p>`);
+}
+
+function formatRoundDate(iso: string): string {
+  return new Date(iso).toLocaleString("sv-SE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderOrderHistory(): string {
+  if (!group) return "";
+
+  const body =
+    group.orderHistory.length === 0
+      ? '<p class="muted">Ingen avslutad beställning ännu.</p>'
+      : `<ul class="history-list">
+          ${group.orderHistory
+            .map((round) => {
+              const lines = round.lines
+                .filter((l) => l.adjustedQuantity > 0)
+                .map((l) => {
+                  const qty =
+                    l.quantity !== l.adjustedQuantity
+                      ? `${l.quantity} → ${l.adjustedQuantity} st`
+                      : `${l.adjustedQuantity} st`;
+                  return `<li><span>${escapeHtml(l.displayName)}</span><span>${qty} · ${formatPrice(l.lineTotal)}</span></li>`;
+                })
+                .join("");
+              return `
+            <li class="history-round">
+              <p class="history-round-head">
+                <strong>${escapeHtml(round.productName)}</strong>
+                <span class="history-date">${formatRoundDate(round.completedAt)}</span>
+              </p>
+              <p class="history-beer">
+                ${formatPrice(round.productPrice)}/st · ${round.adjustedTotalQuantity} st · ${formatPrice(round.totalCost)}
+                ${round.productUrl ? ` · <a href="${escapeAttr(round.productUrl)}" target="_blank" rel="noopener" class="link-out">Systembolaget</a>` : ""}
+              </p>
+              <ul class="order-summary history-lines">${lines || '<li class="muted">—</li>'}</ul>
+            </li>`;
+            })
+            .join("")}
+        </ul>`;
+
+  return win("Historik", body);
 }
 
 function renderProductList(products: GroupProduct[], showVotes: boolean): string {

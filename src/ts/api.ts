@@ -47,6 +47,21 @@ export interface GroupData {
   remainderUntilRequestedTarget: number;
   isOrderFulfilled: boolean;
   needsTieBreak: boolean;
+    orderHistory: {
+    roundNumber: number;
+    completedAt: string;
+    productName: string;
+    productUrl: string;
+    productPrice: number;
+    adjustedTotalQuantity: number;
+    totalCost: number;
+    lines: {
+      displayName: string;
+      quantity: number;
+      adjustedQuantity: number;
+      lineTotal: number;
+    }[];
+  }[];
 }
 
 async function parseError(res: Response): Promise<string> {

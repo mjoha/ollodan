@@ -14,6 +14,7 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             .Include(g => g.Products).ThenInclude(p => p.AddedByMember)
             .Include(g => g.Votes)
             .Include(g => g.OrderLines).ThenInclude(o => o.Member)
+            .Include(g => g.OrderRounds).ThenInclude(r => r.Lines)
             .Include(g => g.WinningProduct)
             .FirstOrDefaultAsync(g => g.Id == id, ct);
 
@@ -292,12 +293,35 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
     public async Task<(bool Ok, string? Error)> CloseGroupAsync(Guid groupId, CancellationToken ct = default)
     {
         var group = await db.Groups
+            .Include(g => g.Members)
             .Include(g => g.Votes)
             .Include(g => g.OrderLines)
+            .Include(g => g.WinningProduct)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
 
         if (group is null) return (false, "Gruppen finns inte.");
         if (group.Phase != GroupPhase.Ordering) return (false, "Gruppen är inte i beställningsfas.");
+        if (group.WinningProduct is not { } product)
+            return (false, "Ingen öl vald.");
+
+        var requestedTotal = group.OrderLines.Sum(o => o.Quantity);
+        var minOrder = product.MinimumOrderQuantity;
+        if (requestedTotal <= 0)
+            return (false, "Ingen har angett antal.");
+        if (requestedTotal < minOrder)
+            return (false, $"Minimiantalet {minOrder} st är inte uppnått ({requestedTotal} st önskade).");
+
+        var adjusted = OrderAllocation.Allocate(
+            group.OrderLines.Select(o => (o.MemberId, o.Quantity)),
+            minOrder);
+        var adjustedTotal = adjusted.Values.Sum();
+        if (adjustedTotal < minOrder)
+            return (false, $"Minimiantalet {minOrder} st är inte uppnått ({requestedTotal} st önskade).");
+        if (adjustedTotal % minOrder != 0)
+            return (false, "Justerad beställning uppfyller inte minimiantalet.");
+
+        await SaveOrderRoundAsync(group, ct);
+        await RemoveCompletedProductAsync(group, product, ct);
 
         if (group.IsRepeating)
         {
@@ -317,6 +341,68 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         group.SwishNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    private async Task SaveOrderRoundAsync(Group group, CancellationToken ct)
+    {
+        if (group.WinningProduct is not { } product)
+            return;
+
+        var memberNames = group.Members.ToDictionary(m => m.Id, m => m.DisplayName);
+        var rawLines = group.OrderLines.Select(o => (o.MemberId, o.Quantity)).ToList();
+        var adjusted = OrderAllocation.Allocate(rawLines, product.MinimumOrderQuantity);
+
+        var lines = group.OrderLines
+            .Select(o =>
+            {
+                var adj = adjusted.GetValueOrDefault(o.MemberId);
+                return new OrderRoundLine
+                {
+                    Id = Guid.NewGuid(),
+                    MemberId = o.MemberId,
+                    DisplayName = memberNames.GetValueOrDefault(o.MemberId, "?"),
+                    Quantity = o.Quantity,
+                    AdjustedQuantity = adj,
+                    LineTotal = adj * product.Price
+                };
+            })
+            .Where(l => l.Quantity > 0 || l.AdjustedQuantity > 0)
+            .ToList();
+
+        if (lines.Count == 0)
+            return;
+
+        var roundNumber = await db.OrderRounds.CountAsync(r => r.GroupId == group.Id, ct) + 1;
+        var round = new OrderRound
+        {
+            Id = Guid.NewGuid(),
+            GroupId = group.Id,
+            RoundNumber = roundNumber,
+            ProductName = product.Name,
+            ProductUrl = product.Url,
+            ProductPrice = product.Price,
+            MinimumOrderQuantity = product.MinimumOrderQuantity,
+            RequestedTotalQuantity = lines.Sum(l => l.Quantity),
+            AdjustedTotalQuantity = lines.Sum(l => l.AdjustedQuantity),
+            TotalCost = lines.Sum(l => l.LineTotal),
+            CompletedAt = DateTime.UtcNow,
+            Lines = lines
+        };
+
+        foreach (var line in lines)
+            line.OrderRoundId = round.Id;
+
+        db.OrderRounds.Add(round);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private Task RemoveCompletedProductAsync(Group group, Product product, CancellationToken ct)
+    {
+        var votesToRemove = group.Votes.Where(v => v.ProductId == product.Id).ToList();
+        db.Votes.RemoveRange(votesToRemove);
+        group.WinningProductId = null;
+        db.Products.Remove(product);
+        return Task.CompletedTask;
     }
 
     private async Task ResetForNextRoundAsync(Group group, CancellationToken ct)
