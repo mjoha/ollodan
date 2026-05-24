@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
-    "dev": "npm run build && dotnet run --project api/Ollodan.Api"
+    "dev": "node scripts/dev.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

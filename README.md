@@ -15,6 +15,8 @@ npm install
 npm run dev
 ```
 
+`npm run dev` watches frontend (`src/`) and API (`api/`) — save a file and refresh the browser (hard refresh if JS looks stale). Stop with Ctrl+C.
+
 Open **http://localhost:5210**. SQLite (`api/Ollodan.Api/ollodan.db`) is created and migrated on startup.
 
 Group links: `http://localhost:5210/g/{group-id}`
