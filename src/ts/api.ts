@@ -18,6 +18,9 @@ export interface GroupData {
   id: string;
   name: string;
   phase: string;
+  allowSuggestions: boolean;
+  isRepeating: boolean;
+  adminMemberId: string;
   swishNote: string | null;
   winningProductId: string | null;
   winningProduct: GroupProduct | null;
@@ -30,6 +33,8 @@ export interface GroupData {
     quantity: number;
     adjustedQuantity: number;
     lineTotal: number;
+    chosenProductId: string | null;
+    chosenProductName: string | null;
   }[];
   minimumOrderQuantity: number;
   caseSize: number | null;
@@ -83,7 +88,11 @@ export async function adminFetch(
   if (!res.ok) throw new Error(await parseError(res));
 }
 
-export function createGroup(name: string, adminDisplayName: string) {
+export function createGroup(
+  name: string,
+  adminDisplayName: string,
+  options: { allowSuggestions: boolean; isRepeating: boolean }
+) {
   return apiFetch<{
     groupId: string;
     adminSecret: string;
@@ -92,7 +101,12 @@ export function createGroup(name: string, adminDisplayName: string) {
     displayName: string;
   }>("/api/groups", {
     method: "POST",
-    body: JSON.stringify({ name, adminDisplayName }),
+    body: JSON.stringify({
+      name,
+      adminDisplayName,
+      allowSuggestions: options.allowSuggestions,
+      isRepeating: options.isRepeating,
+    }),
   });
 }
 

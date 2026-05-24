@@ -201,6 +201,78 @@ summary:focus-visible {
 
 /* —— Form controls —— */
 
+.options-fieldset {
+  margin: 0.75rem 0;
+  padding: 0.35rem 0.5rem 0.5rem;
+  border: 1px solid var(--shadow);
+  background: var(--window);
+}
+
+.options-fieldset .field-label {
+  padding: 0 0.15rem;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0;
+  font-size: var(--size-sm);
+  cursor: default;
+}
+
+.checkbox-caption {
+  cursor: default;
+  user-select: none;
+}
+
+.win-checkbox,
+.win-radio {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  background: var(--window);
+  border: 2px solid;
+  border-color: var(--shadow) var(--light) var(--light) var(--shadow);
+  cursor: default;
+}
+
+.win-checkbox:checked,
+.win-radio:checked {
+  background-color: var(--window);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 11 11'%3E%3Cpath fill='%23000' d='M1 5.5 4 8.5 10 2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 9px 9px;
+}
+
+.win-radio {
+  border-radius: 0;
+}
+
+.options-hint {
+  margin: 0.15rem 0 0.5rem 1.35rem;
+}
+
+.beer-pick-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  cursor: default;
+}
+
+.beer-confirm-list .product-item.selected {
+  background: var(--face);
+}
+
+.confirm-beer-row {
+  margin-top: 0.5rem;
+}
+
 .field {
   margin-bottom: 0.5rem;
 }

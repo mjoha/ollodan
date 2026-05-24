@@ -49,6 +49,23 @@
                 data-required-msg="Ange ditt namn."
               />
             </div>
+            <fieldset class="options-fieldset">
+              <legend class="field-label">Alternativ</legend>
+              <label class="checkbox-row">
+                <input type="checkbox" id="allow-suggestions" name="allowSuggestions" class="win-checkbox" checked />
+                <span class="checkbox-caption">Förslag och röstning</span>
+              </label>
+              <p class="hint options-hint">
+                Avmarkera om du själv väljer öl — klistra in länk, bekräfta, sedan anger deltagarna antal.
+              </p>
+              <label class="checkbox-row">
+                <input type="checkbox" id="is-repeating" name="isRepeating" class="win-checkbox" />
+                <span class="checkbox-caption">Repetera</span>
+              </label>
+              <p class="hint options-hint">
+                Efter bekräftad beställning startar gruppen om från början.
+              </p>
+            </fieldset>
             <button type="submit" class="primary" id="create-submit">Skapa</button>
           </form>
           <p id="create-error" class="error" hidden></p>

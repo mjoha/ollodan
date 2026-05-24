@@ -21,12 +21,26 @@ import { win } from "./ui.js";
 import { wireRequiredFields } from "./validate.js";
 import { escapeAttr } from "./escape.js";
 
-const PHASES = [
+const PHASES_SUGGESTIONS = [
   { key: "Collecting", label: "1. Förslag" },
   { key: "Voting", label: "2. Rösta" },
   { key: "Ordering", label: "3. Antal" },
   { key: "Closed", label: "4. Beställ" },
 ] as const;
+
+const PHASES_ADMIN_PICKS = [
+  { key: "Collecting", label: "1. Öl" },
+  { key: "Ordering", label: "2. Antal" },
+  { key: "Closed", label: "3. Beställ" },
+] as const;
+
+function groupPhases(g: GroupData) {
+  return g.allowSuggestions ? PHASES_SUGGESTIONS : PHASES_ADMIN_PICKS;
+}
+
+function isGroupAdmin(): boolean {
+  return !!session && !!group && session.memberId === group.adminMemberId;
+}
 
 const params = new URLSearchParams(window.location.search);
 const groupId = parseGroupIdFromLocation();
@@ -47,6 +61,7 @@ interface FormDrafts {
   productPrice?: string;
   quantity?: string;
   displayName?: string;
+  selectedBeerId?: string;
 }
 
 let pendingDrafts: FormDrafts = {};
@@ -75,6 +90,11 @@ function captureDrafts(): FormDrafts {
 
   const display = document.getElementById("display-name") as HTMLInputElement | null;
   if (display) d.displayName = display.value;
+
+  const beerPick = document.querySelector(
+    'input[name="beer-pick"]:checked'
+  ) as HTMLInputElement | null;
+  if (beerPick) d.selectedBeerId = beerPick.value;
 
   return d;
 }
@@ -146,7 +166,7 @@ function render() {
     html += renderAdminPanel();
   }
 
-  html += renderPhaseWindow(group.phase);
+  html += renderPhaseWindow(group);
 
   if (!session) {
     html += renderJoinForm(drafts);
@@ -174,11 +194,13 @@ function render() {
   wireRequiredFields(app);
 }
 
-function renderPhaseWindow(currentPhase: string): string {
-  const items = PHASES.map(
-    (p) =>
-      `<li class="phase-step${p.key === currentPhase ? " phase-step-current" : ""}">${p.label}</li>`
-  ).join("");
+function renderPhaseWindow(g: GroupData): string {
+  const items = groupPhases(g)
+    .map(
+      (p) =>
+        `<li class="phase-step${p.key === g.phase ? " phase-step-current" : ""}">${p.label}</li>`
+    )
+    .join("");
 
   return win("Fas", `<ul class="phase-steps">${items}</ul>`);
 }
@@ -243,12 +265,15 @@ function renderAdminPanel(): string {
       : "";
 
   let actions = "";
-  if (group.phase === "Collecting") {
+  if (group.phase === "Collecting" && group.allowSuggestions) {
     actions = `<button type="button" id="btn-start-voting" class="primary">Starta röstning</button>`;
   } else if (group.phase === "Voting") {
     actions = `<button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>`;
   } else if (group.phase === "Ordering") {
-    actions = `<button type="button" id="btn-close" class="primary">Stäng order</button>`;
+    const closeLabel = group.isRepeating
+      ? "Bekräfta beställning och starta om"
+      : "Stäng order";
+    actions = `<button type="button" id="btn-close" class="primary">${closeLabel}</button>`;
   }
 
   return win(
@@ -262,6 +287,11 @@ function renderAdminPanel(): string {
 
 function renderCollecting(drafts: FormDrafts): string {
   if (!group) return "";
+
+  if (!group.allowSuggestions) {
+    if (isGroupAdmin()) return renderAdminBeerSetup(drafts);
+    return renderWaitingForAdminBeer();
+  }
 
   const addForm = session
     ? win(
@@ -285,6 +315,65 @@ function renderCollecting(drafts: FormDrafts): string {
       : renderProductList(group.products, false);
 
   return `${addForm}${win(`Förslag (${group.products.length})`, list)}`;
+}
+
+function renderWaitingForAdminBeer(): string {
+  if (!group) return "";
+  const preview =
+    group.products.length === 0
+      ? '<p class="muted">Admin lägger in öl snart.</p>'
+      : `<p class="hint">Admin bekräftar öl innan ni kan ange antal.</p>${renderProductList(group.products, false)}`;
+  return win("Väntar på öl", preview);
+}
+
+function renderAdminBeerSetup(drafts: FormDrafts): string {
+  if (!group) return "";
+
+  const selectedId =
+    drafts.selectedBeerId ??
+    (group.products.length === 1 ? group.products[0]!.id : "");
+
+  const preview =
+    group.products.length === 0
+      ? '<p class="muted">Klistra in en länk och klicka Lägg till.</p>'
+      : `<ul class="product-list beer-confirm-list">
+          ${group.products
+            .map((p) => {
+              const checked = selectedId === p.id;
+              return `
+            <li class="product-item ${checked ? "selected" : ""}">
+              <label class="beer-pick-label">
+                <input type="radio" name="beer-pick" value="${p.id}" class="win-radio" ${checked ? "checked" : ""} />
+                ${productImage(p)}
+                <span class="product-info">
+                  <strong>${escapeHtml(p.name)}</strong>
+                  <span>${formatPrice(p.price)} · min ${p.minimumOrderQuantity} st</span>
+                </span>
+              </label>
+            </li>`;
+            })
+            .join("")}
+        </ul>`;
+
+  return win(
+    "Beställningsöl",
+    `<p class="hint">1. Klistra in systembolaget.se-länk · 2. Lägg till · 3. Bekräfta öl</p>
+     <form id="add-product-form">
+       <input type="url" name="url" required placeholder="https://www.systembolaget.se/produkt/..." value="${escapeAttr(drafts.productUrl ?? "")}" data-required-msg="Klistra in en produktlänk." />
+       <details class="manual-fallback">
+         <summary>Manuell inmatning</summary>
+         <input type="text" name="name" placeholder="Namn" value="${escapeAttr(drafts.productName ?? "")}" />
+         <input type="number" name="price" placeholder="Pris (kr)" min="0" step="1" value="${escapeAttr(drafts.productPrice ?? "")}" />
+       </details>
+       <button type="submit">Lägg till</button>
+     </form>
+     ${preview}
+     <div class="btn-row confirm-beer-row">
+       <button type="button" id="btn-confirm-beer" class="primary" ${selectedId ? "" : "disabled"}>
+         Bekräfta öl och öppna beställning
+       </button>
+     </div>`
+  );
 }
 
 function renderVoting(): string {
@@ -317,7 +406,12 @@ function renderVoting(): string {
 }
 
 function renderOrdering(drafts: FormDrafts): string {
-  if (!group || !group.winningProduct) return "";
+  if (!group || !group.winningProduct) {
+    if (!group?.allowSuggestions && group?.phase === "Ordering") {
+      return win("Väntar", '<p class="muted">Öl saknas — admin måste bekräfta.</p>');
+    }
+    return "";
+  }
 
   const wp = group.winningProduct;
   const myLine = session
@@ -391,7 +485,8 @@ function renderOrdering(drafts: FormDrafts): string {
              o.quantity !== o.adjustedQuantity
                ? `${o.quantity} → ${o.adjustedQuantity} st`
                : `${o.adjustedQuantity} st`;
-           return `<li><span>${escapeHtml(o.displayName)}</span><span>${qtyLabel} · ${formatPrice(o.lineTotal)}</span></li>`;
+           const beer = o.chosenProductName ? `${escapeHtml(o.chosenProductName)} · ` : "";
+           return `<li><span>${escapeHtml(o.displayName)}</span><span>${beer}${qtyLabel} · ${formatPrice(o.lineTotal)}</span></li>`;
          })
          .join("") || '<li class="muted">—</li>'}
      </ul>`
@@ -402,17 +497,20 @@ function renderOrdering(drafts: FormDrafts): string {
 
 function renderClosed(): string {
   if (!group) return "";
+  const beerLine = group.winningProduct
+    ? `<p class="status-line">${escapeHtml(group.winningProduct.name)} · ${formatPrice(group.winningProduct.price)}/st</p>`
+    : "";
   return win(
     "Sammanfattning",
-    `${group.winningProduct ? `<p class="status-line">${escapeHtml(group.winningProduct.name)} · ${formatPrice(group.winningProduct.price)}/st</p>` : ""}
+    `${beerLine}
      <p>Totalt <strong>${group.adjustedTotalQuantity}</strong> st beställs · <strong>${formatPrice(group.totalCost)}</strong></p>
      <ul class="order-summary">
        ${group.orderLines
          .filter((o) => o.adjustedQuantity > 0)
-         .map(
-           (o) =>
-             `<li><span>${escapeHtml(o.displayName)}</span><span>${o.adjustedQuantity} st · ${formatPrice(o.lineTotal)}</span></li>`
-         )
+         .map((o) => {
+           const beer = o.chosenProductName ? `${escapeHtml(o.chosenProductName)} · ` : "";
+           return `<li><span>${escapeHtml(o.displayName)}</span><span>${beer}${o.adjustedQuantity} st · ${formatPrice(o.lineTotal)}</span></li>`;
+         })
          .join("")}
      </ul>
      <p class="footnote">Köp hos Systembolaget — inte privat vidareförsäljning.</p>`
@@ -540,6 +638,32 @@ function bindEvents() {
   document.getElementById("btn-start-voting")?.addEventListener("click", () =>
     adminAction(`/api/groups/${groupId}/admin/start-voting`, "POST")
   );
+  document.getElementById("btn-confirm-beer")?.addEventListener("click", async () => {
+    if (!adminKey) return;
+    const picked = document.querySelector(
+      'input[name="beer-pick"]:checked'
+    ) as HTMLInputElement | null;
+    if (!picked) {
+      showError("Välj en öl att bekräfta.");
+      return;
+    }
+    try {
+      await adminFetch(`/api/groups/${groupId}/admin/confirm-beer`, adminKey, {
+        method: "POST",
+        body: JSON.stringify({ productId: picked.value }),
+      });
+      await refresh();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Kunde inte bekräfta öl");
+    }
+  });
+
+  document.querySelectorAll('input[name="beer-pick"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      const btn = document.getElementById("btn-confirm-beer") as HTMLButtonElement | null;
+      if (btn) btn.disabled = false;
+    });
+  });
   document.getElementById("btn-finish-voting")?.addEventListener("click", () =>
     adminAction(`/api/groups/${groupId}/admin/finish-voting`, "POST")
   );

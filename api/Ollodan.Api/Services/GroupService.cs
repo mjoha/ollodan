@@ -20,6 +20,8 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
     public async Task<CreateGroupResponse?> CreateGroupAsync(
         string name,
         string adminDisplayName,
+        bool allowSuggestions = true,
+        bool isRepeating = false,
         CancellationToken ct = default)
     {
         var groupName = name.Trim();
@@ -29,21 +31,26 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         if (string.IsNullOrWhiteSpace(adminName) || adminName.Length > 50)
             return null;
 
+        var admin = new Member
+        {
+            Id = Guid.NewGuid(),
+            GroupId = Guid.Empty,
+            DisplayName = adminName,
+            SessionToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        };
+
         var group = new Group
         {
             Id = Guid.NewGuid(),
             Name = groupName,
             AdminSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)),
+            AdminMemberId = admin.Id,
+            AllowSuggestions = allowSuggestions,
+            IsRepeating = isRepeating,
             Phase = GroupPhase.Collecting
         };
 
-        var admin = new Member
-        {
-            Id = Guid.NewGuid(),
-            GroupId = group.Id,
-            DisplayName = adminName,
-            SessionToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-        };
+        admin.GroupId = group.Id;
 
         db.Groups.Add(group);
         db.Members.Add(admin);
@@ -97,6 +104,9 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         if (group is null || group.Phase != GroupPhase.Collecting)
             return null;
 
+        if (!group.AllowSuggestions && member.Id != group.AdminMemberId)
+            return null;
+
         var url = request.Url.Trim();
         var productId = systembolaget.ExtractProductId(url);
         if (productId is null)
@@ -135,7 +145,10 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             .Include(g => g.Votes)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
 
-        if (group is null || group.Phase != GroupPhase.Voting)
+        if (group is null)
+            return false;
+
+        if (group.Phase != GroupPhase.Voting || !group.AllowSuggestions)
             return false;
 
         if (!group.Products.Any(p => p.Id == productId))
@@ -165,12 +178,16 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
     {
         var group = await db.Groups
             .Include(g => g.OrderLines)
+            .Include(g => g.Votes)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
 
         if (group is null || group.Phase != GroupPhase.Ordering)
             return false;
 
         if (quantity < 0)
+            return false;
+
+        if (group.WinningProductId is null)
             return false;
 
         var line = group.OrderLines.FirstOrDefault(o => o.MemberId == member.Id);
@@ -198,10 +215,28 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
     {
         var group = await db.Groups.Include(g => g.Products).FirstOrDefaultAsync(g => g.Id == groupId, ct);
         if (group is null) return (false, "Gruppen finns inte.");
+        if (!group.AllowSuggestions) return (false, "Den här gruppen använder inte röstning.");
         if (group.Phase != GroupPhase.Collecting) return (false, "Gruppen är inte i insamlingsfas.");
         if (group.Products.Count == 0) return (false, "Lägg till minst en öl först.");
 
         group.Phase = GroupPhase.Voting;
+        await db.SaveChangesAsync(ct);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> ConfirmBeerAndStartOrderingAsync(
+        Guid groupId,
+        Guid productId,
+        CancellationToken ct = default)
+    {
+        var group = await db.Groups.Include(g => g.Products).FirstOrDefaultAsync(g => g.Id == groupId, ct);
+        if (group is null) return (false, "Gruppen finns inte.");
+        if (group.AllowSuggestions) return (false, "Använd röstning för den här gruppen.");
+        if (group.Phase != GroupPhase.Collecting) return (false, "Ölet är redan bekräftat.");
+        if (!group.Products.Any(p => p.Id == productId)) return (false, "Välj en öl från listan.");
+
+        group.WinningProductId = productId;
+        group.Phase = GroupPhase.Ordering;
         await db.SaveChangesAsync(ct);
         return (true, null);
     }
@@ -214,6 +249,7 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
 
         if (group is null) return (false, "Gruppen finns inte.", false);
+        if (!group.AllowSuggestions) return (false, "Den här gruppen använder inte röstning.", false);
         if (group.Phase != GroupPhase.Voting) return (false, "Gruppen röstar inte.", false);
 
         var counts = group.Votes
@@ -243,6 +279,7 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
             .FirstOrDefaultAsync(g => g.Id == groupId, ct);
 
         if (group is null) return (false, "Gruppen finns inte.");
+        if (!group.AllowSuggestions) return (false, "Kan inte välja vinnare i den här gruppen.");
         if (group.Phase != GroupPhase.Voting) return (false, "Kan bara välja vinnare under röstning.");
         if (!group.Products.Any(p => p.Id == productId)) return (false, "Produkten finns inte i gruppen.");
 
@@ -254,9 +291,19 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
 
     public async Task<(bool Ok, string? Error)> CloseGroupAsync(Guid groupId, CancellationToken ct = default)
     {
-        var group = await db.Groups.FindAsync([groupId], ct);
+        var group = await db.Groups
+            .Include(g => g.Votes)
+            .Include(g => g.OrderLines)
+            .FirstOrDefaultAsync(g => g.Id == groupId, ct);
+
         if (group is null) return (false, "Gruppen finns inte.");
         if (group.Phase != GroupPhase.Ordering) return (false, "Gruppen är inte i beställningsfas.");
+
+        if (group.IsRepeating)
+        {
+            await ResetForNextRoundAsync(group, ct);
+            return (true, null);
+        }
 
         group.Phase = GroupPhase.Closed;
         await db.SaveChangesAsync(ct);
@@ -270,5 +317,16 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         group.SwishNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    private async Task ResetForNextRoundAsync(Group group, CancellationToken ct)
+    {
+        db.Votes.RemoveRange(group.Votes);
+        db.OrderLines.RemoveRange(group.OrderLines);
+        group.Votes = [];
+        group.OrderLines = [];
+        group.WinningProductId = null;
+        group.Phase = GroupPhase.Collecting;
+        await db.SaveChangesAsync(ct);
     }
 }

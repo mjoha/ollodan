@@ -6,6 +6,8 @@ import { wireRequiredFields } from "./validate.js";
 const form = document.getElementById("create-form") as HTMLFormElement;
 const nameInput = document.getElementById("group-name") as HTMLInputElement;
 const adminInput = document.getElementById("admin-name") as HTMLInputElement;
+const allowSuggestionsInput = document.getElementById("allow-suggestions") as HTMLInputElement;
+const isRepeatingInput = document.getElementById("is-repeating") as HTMLInputElement;
 const errorEl = document.getElementById("create-error") as HTMLElement;
 const submitBtn = document.getElementById("create-submit") as HTMLButtonElement;
 const joinLink = document.getElementById("join-link") as HTMLAnchorElement;
@@ -29,7 +31,10 @@ form.addEventListener("submit", async (e) => {
   submitBtn.textContent = "Skapar…";
 
   try {
-    const res = await createGroup(name, adminName);
+    const res = await createGroup(name, adminName, {
+      allowSuggestions: allowSuggestionsInput.checked,
+      isRepeating: isRepeatingInput.checked,
+    });
 
     setSession(res.groupId, {
       memberId: res.memberId,

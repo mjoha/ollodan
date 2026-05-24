@@ -3,7 +3,11 @@ using Ollodan.Api.Services;
 
 namespace Ollodan.Api.Dtos;
 
-public record CreateGroupRequest(string Name, string AdminDisplayName);
+public record CreateGroupRequest(
+    string Name,
+    string AdminDisplayName,
+    bool AllowSuggestions = true,
+    bool IsRepeating = false);
 
 public record CreateGroupResponse(
     Guid GroupId,
@@ -57,12 +61,17 @@ public record OrderLineDto(
     string DisplayName,
     int Quantity,
     int AdjustedQuantity,
-    decimal LineTotal);
+    decimal LineTotal,
+    Guid? ChosenProductId,
+    string? ChosenProductName);
 
 public record GroupDto(
     Guid Id,
     string Name,
     string Phase,
+    bool AllowSuggestions,
+    bool IsRepeating,
+    Guid AdminMemberId,
     string? SwishNote,
     Guid? WinningProductId,
     ProductDto? WinningProduct,
@@ -124,12 +133,15 @@ public static class GroupDtoMapper
                 memberNames.GetValueOrDefault(o.MemberId, "?"),
                 o.Quantity,
                 adjusted.GetValueOrDefault(o.MemberId),
-                adjusted.GetValueOrDefault(o.MemberId) * price))
+                adjusted.GetValueOrDefault(o.MemberId) * price,
+                group.WinningProductId,
+                group.WinningProduct?.Name))
             .ToList();
 
         var requestedTotal = orderLines.Sum(o => o.Quantity);
         var adjustedTotal = orderLines.Sum(o => o.AdjustedQuantity);
         var totalCost = orderLines.Sum(o => o.LineTotal);
+
         var orderMultiples = minOrder > 0 ? adjustedTotal / minOrder : 0;
         var remainderMin = adjustedTotal == 0 ? minOrder : (minOrder - (adjustedTotal % minOrder)) % minOrder;
         var nextRequestedTarget = requestedTotal <= 0
@@ -138,7 +150,8 @@ public static class GroupDtoMapper
         var remainderUntilRequestedTarget = nextRequestedTarget - requestedTotal;
         var isOrderFulfilled = requestedTotal > 0 && adjustedTotal >= minOrder && adjustedTotal % minOrder == 0;
 
-        var needsTieBreak = group.Phase == GroupPhase.Voting
+        var needsTieBreak = group.AllowSuggestions
+            && group.Phase == GroupPhase.Voting
             && products.Count > 0
             && GetTopVoteCount(products) > 0
             && products.Count(p => p.VoteCount == GetTopVoteCount(products)) > 1;
@@ -165,6 +178,9 @@ public static class GroupDtoMapper
             group.Id,
             group.Name,
             group.Phase.ToString(),
+            group.AllowSuggestions,
+            group.IsRepeating,
+            group.AdminMemberId,
             group.SwishNote,
             group.WinningProductId,
             winning,

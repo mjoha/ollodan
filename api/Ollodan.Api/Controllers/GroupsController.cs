@@ -15,7 +15,12 @@ public class GroupsController(GroupService groups) : ControllerBase
     [EnableRateLimiting("write")]
     public async Task<ActionResult<CreateGroupResponse>> Create([FromBody] CreateGroupRequest request, CancellationToken ct)
     {
-        var result = await groups.CreateGroupAsync(request.Name, request.AdminDisplayName, ct);
+        var result = await groups.CreateGroupAsync(
+            request.Name,
+            request.AdminDisplayName,
+            request.AllowSuggestions,
+            request.IsRepeating,
+            ct);
         if (result is null)
             return BadRequest(new { error = "Ange gruppnamn och admin-namn (max 100 / 50 tecken)." });
 
@@ -51,7 +56,7 @@ public class GroupsController(GroupService groups) : ControllerBase
         var member = (Member)HttpContext.Items["Member"]!;
         var product = await groups.AddProductAsync(id, member, request, ct);
         if (product is null)
-            return BadRequest(new { error = "Kunde inte lägga till produkt. Kontrollera länken och att gruppen samlar förslag." });
+            return BadRequest(new { error = "Kunde inte lägga till produkt. Kontrollera länken och att du får lägga till öl i den här fasen." });
 
         return Ok(new ProductDto(
             product.Id,
@@ -98,6 +103,15 @@ public class GroupsController(GroupService groups) : ControllerBase
     public async Task<IActionResult> StartVoting(Guid id, CancellationToken ct)
     {
         var (ok, error) = await groups.StartVotingAsync(id, ct);
+        if (!ok) return BadRequest(new { error });
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/admin/confirm-beer")]
+    [RequireAdmin]
+    public async Task<IActionResult> ConfirmBeer(Guid id, [FromBody] PickWinnerRequest request, CancellationToken ct)
+    {
+        var (ok, error) = await groups.ConfirmBeerAndStartOrderingAsync(id, request.ProductId, ct);
         if (!ok) return BadRequest(new { error });
         return NoContent();
     }

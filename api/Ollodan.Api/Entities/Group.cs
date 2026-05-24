@@ -6,6 +6,9 @@ public class Group
     public string Name { get; set; } = "";
     public GroupPhase Phase { get; set; } = GroupPhase.Collecting;
     public string AdminSecret { get; set; } = "";
+    public Guid AdminMemberId { get; set; }
+    public bool AllowSuggestions { get; set; } = true;
+    public bool IsRepeating { get; set; }
     public string? SwishNote { get; set; }
     public Guid? WinningProductId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
