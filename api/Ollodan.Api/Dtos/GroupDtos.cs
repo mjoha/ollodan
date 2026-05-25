@@ -119,7 +119,7 @@ public static class GroupDtoMapper
         var memberNames = group.Members.ToDictionary(m => m.Id, m => m.DisplayName);
 
         var products = group.Products
-            .OrderByDescending(p => voteCounts.GetValueOrDefault(p.Id))
+            .OrderBy(p => p.CreatedAt)
             .ThenBy(p => p.Name)
             .Select(p => new ProductDto(
                 p.Id,

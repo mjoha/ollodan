@@ -42,7 +42,19 @@ docker compose up --build
 
 Data persists in the `ollodan-data` volume.
 
-## Deploy (Fly.io)
+## Deploy (your server + Docker)
+
+See **[deploy/DEPLOY.md](deploy/DEPLOY.md)** for hosting at e.g. `ollodan.derp.net` (DNS, Caddy HTTPS, backups).
+
+Quick start on the server:
+
+```bash
+git clone <repo> ollodan && cd ollodan/deploy
+# edit Caddyfile if needed
+docker compose up -d --build
+```
+
+### Deploy (Fly.io)
 
 ```bash
 fly launch

@@ -1,0 +1,42 @@
+# Production stack for ollodan.derp.net (or your subdomain).
+# Usage on the server:
+#   cd deploy
+#   docker compose up -d --build
+
+services:
+  ollodan:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: Data Source=/data/ollodan.db
+    volumes:
+      - ollodan-data:/data
+    networks:
+      - web
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - web
+    depends_on:
+      - ollodan
+
+networks:
+  web:
+
+volumes:
+  ollodan-data:
+  caddy-data:
+  caddy-config:

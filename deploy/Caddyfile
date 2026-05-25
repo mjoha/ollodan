@@ -1,0 +1,4 @@
+# Replace with your hostname. Caddy obtains HTTPS certificates automatically.
+ollodan.derp.net {
+	reverse_proxy ollodan:8080
+}
