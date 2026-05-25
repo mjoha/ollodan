@@ -144,15 +144,6 @@ summary:focus-visible {
   margin-bottom: 0;
 }
 
-.disclaimer,
-.footnote {
-  font-size: var(--size-sm);
-  color: var(--muted);
-  margin: 0.75rem 0 0;
-  border-top: 1px solid var(--shadow);
-  padding-top: 0.5rem;
-}
-
 .nav-link {
   font-size: var(--size-sm);
   margin-bottom: 0.5rem;
@@ -841,6 +832,66 @@ code {
   background: var(--window);
   padding: 0 0.15rem;
   border: 1px solid var(--shadow);
+}
+
+/* Phones: larger type and tap targets (desktop sizes unchanged) */
+@media (max-width: 640px) {
+  :root {
+    --size: 16px;
+    --size-sm: 14px;
+    --size-lg: 18px;
+  }
+
+  .wrap {
+    padding: 1rem 1rem 2.75rem;
+  }
+
+  .page-header h1 {
+    font-size: 2.25rem;
+  }
+
+  .win-checkbox,
+  .win-radio {
+    width: 18px;
+    height: 18px;
+  }
+
+  .win-checkbox:checked,
+  .win-radio:checked {
+    background-size: 12px 12px;
+  }
+
+  button,
+  .button {
+    min-height: 2.25rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  input[type="text"],
+  input[type="url"],
+  input[type="number"],
+  textarea {
+    padding: 0.4rem 0.35rem;
+  }
+
+  .product-img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .qty-row button {
+    width: 2.75rem;
+    min-height: 2.5rem;
+  }
+
+  .vote-list .vote-btn {
+    min-width: 5.5rem;
+  }
+
+  .delete-product-btn {
+    min-height: 2rem;
+    padding: 0.25rem 0.5rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

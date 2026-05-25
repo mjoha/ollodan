@@ -297,6 +297,14 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         if (!group.AllowSuggestions) return (false, "Den här gruppen använder inte röstning.", false);
         if (group.Phase != GroupPhase.Voting) return (false, "Gruppen röstar inte.", false);
 
+        if (group.Products.Count == 1)
+        {
+            group.WinningProductId = group.Products.First().Id;
+            group.Phase = GroupPhase.Ordering;
+            await db.SaveChangesAsync(ct);
+            return (true, null, false);
+        }
+
         var counts = group.Votes
             .GroupBy(v => v.ProductId)
             .Select(g => new { ProductId = g.Key, Count = g.Count() })
@@ -403,6 +411,10 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         var flow = group.AllowSuggestions
             ? new[] { GroupPhase.Collecting, GroupPhase.Voting, GroupPhase.Ordering, GroupPhase.Closed }
             : new[] { GroupPhase.Collecting, GroupPhase.Ordering, GroupPhase.Closed };
+
+        // Single suggestion skips voting — reverting to "Voting" goes to Collecting instead.
+        if (targetPhase == GroupPhase.Voting && group.Products.Count == 1)
+            targetPhase = GroupPhase.Collecting;
 
         var currentIdx = Array.IndexOf(flow, group.Phase);
         var targetIdx = Array.IndexOf(flow, targetPhase);

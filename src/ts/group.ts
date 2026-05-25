@@ -445,8 +445,10 @@ function renderPhaseStepActions(
   if (!adminKey) return "";
 
   if (index < currentIdx) {
+    const revertPhase =
+      phaseKey === "Voting" && g.products.length === 1 ? "Collecting" : phaseKey;
     return `<div class="phase-step-actions">
-      <button type="button" class="phase-revert-btn" data-revert-phase="${phaseKey}">Tillbaka</button>
+      <button type="button" class="phase-revert-btn" data-revert-phase="${revertPhase}">Tillbaka</button>
     </div>`;
   }
 
@@ -467,13 +469,15 @@ function renderPhaseStepActions(
   }
 
   if (phaseKey === "Voting") {
+    const single = g.products.length === 1;
+    const label = single ? "Gå vidare" : "Avsluta röstning";
     return `<div class="phase-step-actions">
-      <button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>
+      <button type="button" id="btn-finish-voting" class="primary">${label}</button>
     </div>`;
   }
 
   if (phaseKey === "Ordering") {
-    const closeLabel = g.isRepeating ? "Bekräfta och starta om" : "Stäng order";
+    const closeLabel = g.isRepeating ? "Bekräfta" : "Stäng order";
     const closeDisabled = g.isOrderFulfilled ? "" : " disabled";
     return `<div class="phase-step-actions">
       <button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>
