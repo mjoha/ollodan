@@ -176,4 +176,16 @@ public class GroupsController(GroupService groups) : ControllerBase
         if (!ok) return NotFound(new { error = "Gruppen finns inte." });
         return NoContent();
     }
+
+    [HttpPost("{id:guid}/admin/revert-phase")]
+    [RequireAdmin]
+    public async Task<IActionResult> RevertPhase(Guid id, [FromBody] RevertPhaseRequest request, CancellationToken ct)
+    {
+        if (!Enum.TryParse<GroupPhase>(request.Phase, ignoreCase: true, out var phase))
+            return BadRequest(new { error = "Ogiltig fas." });
+
+        var (ok, error) = await groups.AdminRevertToPhaseAsync(id, phase, ct);
+        if (!ok) return BadRequest(new { error });
+        return NoContent();
+    }
 }

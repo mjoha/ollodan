@@ -19,7 +19,13 @@ import {
   setSession,
   type MemberSession,
 } from "./storage.js";
-import { win } from "./ui.js";
+import { win as buildWin } from "./ui.js";
+
+/** Window chrome; all windows use admin styling when admin key is present. */
+function win(title: string, body: string, extraClass = ""): string {
+  const parts = ["admin-view", extraClass].filter(Boolean);
+  return buildWin(title, body, adminKey ? parts.join(" ") : extraClass);
+}
 import {
   formatSwishDigits,
   normalizeSwishNumber,
@@ -270,7 +276,6 @@ function ensureRegionsShell() {
   app.innerHTML = `
     <div id="region-header"></div>
     <div id="region-admin-hint"></div>
-    <div id="region-admin"></div>
     <div id="region-phase"></div>
     <div id="region-main"></div>
     <div id="region-members"></div>
@@ -309,7 +314,6 @@ function buildRegions(drafts: FormDrafts): Record<string, string> {
   return {
     header: renderGroupHeader(drafts),
     "admin-hint": renderAdminKeyHint(),
-    admin: adminKey ? renderAdminPanel() : "",
     phase: renderPhaseWindow(group),
     main,
     members: renderMembers(),
@@ -427,8 +431,99 @@ function renderGroupHeader(drafts: FormDrafts): string {
     "Grupp",
     `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>
      <p class="group-meta">Admin: <strong>${escapeHtml(adminDisplayName(group))}</strong></p>
+     ${adminKey ? renderAdminLinks() : ""}
      ${renderSwishInHeader(drafts)}`
   );
+}
+
+function renderPhaseStepActions(
+  g: GroupData,
+  phaseKey: string,
+  index: number,
+  currentIdx: number
+): string {
+  if (!adminKey) return "";
+
+  if (index < currentIdx) {
+    return `<div class="phase-step-actions">
+      <button type="button" class="phase-revert-btn" data-revert-phase="${phaseKey}">Tillbaka</button>
+    </div>`;
+  }
+
+  if (index !== currentIdx) return "";
+
+  if (phaseKey === "Collecting" && g.allowSuggestions) {
+    const count = g.products.length;
+    const canStart = count > 0;
+    const single = count === 1;
+    const startLabel = single ? "Gå vidare" : "Starta röstning";
+    return `<div class="phase-step-actions">
+      <button type="button" id="btn-start-voting" class="primary"${canStart ? "" : " disabled"}>${startLabel}</button>
+    </div>`;
+  }
+
+  if (phaseKey === "Collecting" && !g.allowSuggestions) {
+    return `<div class="phase-step-actions"><span class="hint">Bekräfta öl nedan</span></div>`;
+  }
+
+  if (phaseKey === "Voting") {
+    return `<div class="phase-step-actions">
+      <button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>
+    </div>`;
+  }
+
+  if (phaseKey === "Ordering") {
+    const closeLabel = g.isRepeating ? "Bekräfta och starta om" : "Stäng order";
+    const closeDisabled = g.isOrderFulfilled ? "" : " disabled";
+    return `<div class="phase-step-actions">
+      <button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>
+    </div>`;
+  }
+
+  return "";
+}
+
+function renderPhaseAdminExtras(g: GroupData): string {
+  if (!adminKey) return "";
+
+  const hints: string[] = [];
+
+  if (g.phase === "Collecting" && g.allowSuggestions) {
+    if (g.products.length === 0) {
+      hints.push("Minst ett förslag krävs innan ni kan gå vidare.");
+    } else if (g.products.length === 1) {
+      hints.push("Ett förslag — röstning hoppas över.");
+    }
+  }
+
+  if (g.phase === "Ordering" && !g.isOrderFulfilled) {
+    hints.push("Minimiantalet måste vara uppnått innan beställningen kan avslutas.");
+  }
+
+  const tieBreak =
+    g.needsTieBreak && g.phase === "Voting"
+      ? `<div class="alert">
+      <p class="status-line">Oavgjort — välj vinnare</p>
+      <div class="tie-products">
+        ${g.products
+          .filter((p) => p.voteCount === Math.max(...g.products.map((x) => x.voteCount)))
+          .map(
+            (p) =>
+              `<button type="button" class="pick-winner" data-product-id="${p.id}">${escapeHtml(p.name)} (${p.voteCount})</button>`
+          )
+          .join("")}
+      </div>
+    </div>`
+      : "";
+
+  const hintsHtml =
+    hints.length > 0
+      ? hints.map((h) => `<p class="hint phase-admin-hint">${escapeHtml(h)}</p>`).join("")
+      : "";
+
+  if (!hintsHtml && !tieBreak) return "";
+
+  return `<div class="phase-admin-block">${hintsHtml}${tieBreak}</div>`;
 }
 
 function renderPhaseWindow(g: GroupData): string {
@@ -442,7 +537,11 @@ function renderPhaseWindow(g: GroupData): string {
           : i < currentIdx
             ? " phase-step-done"
             : "";
-      return `<li class="phase-step${cls}">${p.label}</li>`;
+      const actions = renderPhaseStepActions(g, p.key, i, currentIdx);
+      return `<li class="phase-step${cls}">
+        <span class="phase-step-label">${p.label}</span>
+        ${actions}
+      </li>`;
     })
     .join("");
 
@@ -451,7 +550,9 @@ function renderPhaseWindow(g: GroupData): string {
 
   return win(
     "Steg",
-    `${hintHtml}<ul class="phase-steps" aria-label="Gruppens steg">${items}</ul>`
+    `${hintHtml}
+     <ul class="phase-steps" aria-label="Gruppens steg">${items}</ul>
+     ${renderPhaseAdminExtras(g)}`
   );
 }
 
@@ -492,67 +593,6 @@ function renderAdminLinks(): string {
         <button type="button" data-copy="admin-url">Kopiera</button>
       </div>
     </div>`;
-}
-
-function renderAdminPanel(): string {
-  if (!group) return "";
-
-  const tieBreak =
-    group.needsTieBreak && group.phase === "Voting"
-      ? `
-    <div class="alert">
-      <p class="status-line">Oavgjort</p>
-      <div class="tie-products">
-        ${group.products
-          .filter((p) => p.voteCount === Math.max(...group!.products.map((x) => x.voteCount)))
-          .map(
-            (p) =>
-              `<button type="button" class="pick-winner" data-product-id="${p.id}">${escapeHtml(p.name)} (${p.voteCount})</button>`
-          )
-          .join("")}
-      </div>
-    </div>`
-      : "";
-
-  let actionHint = "";
-  let actionButtons = "";
-  if (group.phase === "Collecting" && group.allowSuggestions) {
-    const count = group.products.length;
-    const canStart = count > 0;
-    const single = count === 1;
-    if (!canStart) {
-      actionHint = '<p class="hint admin-action-hint">Minst ett förslag krävs.</p>';
-    } else if (single) {
-      actionHint =
-        '<p class="hint admin-action-hint">Ett förslag — röstning hoppas över.</p>';
-    }
-    const startLabel = single ? "Gå vidare till antal" : "Starta röstning";
-    actionButtons = `<button type="button" id="btn-start-voting" class="primary"${canStart ? "" : " disabled"}>${startLabel}</button>`;
-  } else if (group.phase === "Voting") {
-    actionButtons = `<button type="button" id="btn-finish-voting" class="primary">Avsluta röstning</button>`;
-  } else if (group.phase === "Ordering") {
-    const closeLabel = group.isRepeating
-      ? "Bekräfta beställning och starta om"
-      : "Stäng order";
-    const closeDisabled = group.isOrderFulfilled ? "" : " disabled";
-    if (!group.isOrderFulfilled) {
-      actionHint =
-        '<p class="hint admin-action-hint">Minimiantalet måste vara uppnått innan beställningen kan avslutas.</p>';
-    }
-    actionButtons = `<button type="button" id="btn-close" class="primary"${closeDisabled}>${closeLabel}</button>`;
-  }
-
-  const adminActions = actionButtons
-    ? `<div class="admin-actions">${actionHint}<div class="btn-row">${actionButtons}</div></div>`
-    : "";
-
-  return win(
-    "Administration",
-    `${renderAdminLinks()}
-     ${tieBreak}
-     ${adminActions}`,
-    "admin"
-  );
 }
 
 function renderCollecting(drafts: FormDrafts): string {
@@ -1000,6 +1040,24 @@ function bindEvents() {
           }
         } catch (err) {
           showError(err instanceof Error ? err.message : "Kunde inte spara nummer");
+        }
+      });
+      return;
+    }
+
+    const revertBtn = target.closest(".phase-revert-btn") as HTMLButtonElement | null;
+    if (revertBtn && adminKey) {
+      const phase = revertBtn.dataset.revertPhase!;
+      const btn = revertBtn;
+      await withBusy(btn, "…", async () => {
+        try {
+          await adminFetch(`/api/groups/${groupId}/admin/revert-phase`, adminKey, {
+            method: "POST",
+            body: JSON.stringify({ phase }),
+          });
+          await refresh();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte gå tillbaka");
         }
       });
       return;

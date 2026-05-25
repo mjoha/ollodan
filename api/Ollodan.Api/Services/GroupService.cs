@@ -387,6 +387,56 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         return true;
     }
 
+    public async Task<(bool Ok, string? Error)> AdminRevertToPhaseAsync(
+        Guid groupId,
+        GroupPhase targetPhase,
+        CancellationToken ct = default)
+    {
+        var group = await db.Groups
+            .Include(g => g.Products)
+            .Include(g => g.Votes)
+            .Include(g => g.OrderLines)
+            .FirstOrDefaultAsync(g => g.Id == groupId, ct);
+
+        if (group is null) return (false, "Gruppen finns inte.");
+
+        var flow = group.AllowSuggestions
+            ? new[] { GroupPhase.Collecting, GroupPhase.Voting, GroupPhase.Ordering, GroupPhase.Closed }
+            : new[] { GroupPhase.Collecting, GroupPhase.Ordering, GroupPhase.Closed };
+
+        var currentIdx = Array.IndexOf(flow, group.Phase);
+        var targetIdx = Array.IndexOf(flow, targetPhase);
+        if (targetIdx < 0) return (false, "Ogiltig fas.");
+        if (targetIdx >= currentIdx) return (false, "Kan bara gå tillbaka till en tidigare fas.");
+
+        if (targetPhase == GroupPhase.Voting && !group.AllowSuggestions)
+            return (false, "Den här gruppen har ingen röstningsfas.");
+
+        if (targetPhase == GroupPhase.Ordering && group.WinningProductId is null)
+            return (false, "Ingen öl vald — kan inte gå tillbaka till antal.");
+
+        if (targetPhase == GroupPhase.Collecting)
+        {
+            db.Votes.RemoveRange(group.Votes);
+            db.OrderLines.RemoveRange(group.OrderLines);
+            group.WinningProductId = null;
+            group.Phase = GroupPhase.Collecting;
+        }
+        else if (targetPhase == GroupPhase.Voting)
+        {
+            db.OrderLines.RemoveRange(group.OrderLines);
+            group.WinningProductId = null;
+            group.Phase = GroupPhase.Voting;
+        }
+        else if (targetPhase == GroupPhase.Ordering)
+        {
+            group.Phase = GroupPhase.Ordering;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return (true, null);
+    }
+
     private async Task SaveOrderRoundAsync(Group group, CancellationToken ct)
     {
         if (group.WinningProduct is not { } product)

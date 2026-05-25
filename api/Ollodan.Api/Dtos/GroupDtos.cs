@@ -30,6 +30,8 @@ public record PickWinnerRequest(Guid ProductId);
 
 public record SwishNoteRequest(string? SwishNote);
 
+public record RevertPhaseRequest(string Phase);
+
 public record ResolvedProductDto(
     string SystembolagetProductId,
     string Url,
