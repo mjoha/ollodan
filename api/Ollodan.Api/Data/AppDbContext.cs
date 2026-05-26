@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<OrderLine> OrderLines => Set<OrderLine>();
     public DbSet<OrderRound> OrderRounds => Set<OrderRound>();
     public DbSet<OrderRoundLine> OrderRoundLines => Set<OrderRoundLine>();
+    public DbSet<MemberTransferCode> MemberTransferCodes => Set<MemberTransferCode>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,6 +69,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(l => l.Id);
             e.HasOne(l => l.OrderRound).WithMany(r => r.Lines).HasForeignKey(l => l.OrderRoundId);
+        });
+
+        modelBuilder.Entity<MemberTransferCode>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => t.Code).IsUnique();
+            e.HasIndex(t => t.MemberId);
+            e.HasOne(t => t.Member).WithMany().HasForeignKey(t => t.MemberId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(t => t.Group).WithMany().HasForeignKey(t => t.GroupId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -1,4 +1,4 @@
-import { createGroup } from "./api.js";
+import { createGroup, redeemTransferCode } from "./api.js";
 import { buildGroupUrl, parseGroupIdFromUrl } from "./groupId.js";
 import { setAdminKey, setSession } from "./storage.js";
 import { validateForm, wireValidatedFields } from "./validate.js";
@@ -16,11 +16,19 @@ const joinForm = document.getElementById("join-form") as HTMLFormElement;
 const joinUrlInput = document.getElementById("join-url") as HTMLInputElement;
 const joinErrorEl = document.getElementById("join-error") as HTMLElement;
 const joinCancelBtn = document.getElementById("join-cancel") as HTMLButtonElement;
+const transferLink = document.getElementById("transfer-link") as HTMLAnchorElement;
+const transferPanel = document.getElementById("transfer-panel") as HTMLElement;
+const transferForm = document.getElementById("transfer-form") as HTMLFormElement;
+const transferCodeInput = document.getElementById("transfer-code") as HTMLInputElement;
+const transferErrorEl = document.getElementById("transfer-error") as HTMLElement;
+const transferCancelBtn = document.getElementById("transfer-cancel") as HTMLButtonElement;
 
 wireValidatedFields(form);
 wireValidatedFields(joinForm);
+wireValidatedFields(transferForm);
 
 let creating = false;
+let redeeming = false;
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -62,6 +70,7 @@ form.addEventListener("submit", async (e) => {
 });
 
 function showJoinPanel() {
+  hideTransferPanel();
   joinPanel.hidden = false;
   joinErrorEl.hidden = true;
   joinLink.setAttribute("aria-expanded", "true");
@@ -76,16 +85,37 @@ function hideJoinPanel() {
   joinErrorEl.hidden = true;
 }
 
+function showTransferPanel() {
+  hideJoinPanel();
+  transferPanel.hidden = false;
+  transferErrorEl.hidden = true;
+  transferLink.setAttribute("aria-expanded", "true");
+  transferCodeInput.focus();
+  transferPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function hideTransferPanel() {
+  transferPanel.hidden = true;
+  transferLink.setAttribute("aria-expanded", "false");
+  transferForm.reset();
+  transferErrorEl.hidden = true;
+}
+
 joinLink.addEventListener("click", (e) => {
   e.preventDefault();
-  if (joinPanel.hidden) {
-    showJoinPanel();
-  } else {
-    hideJoinPanel();
-  }
+  if (joinPanel.hidden) showJoinPanel();
+  else hideJoinPanel();
 });
 
 joinCancelBtn.addEventListener("click", hideJoinPanel);
+
+transferLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (transferPanel.hidden) showTransferPanel();
+  else hideTransferPanel();
+});
+
+transferCancelBtn.addEventListener("click", hideTransferPanel);
 
 joinForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -114,6 +144,47 @@ joinForm.addEventListener("submit", (e) => {
   joinErrorEl.textContent =
     "Kunde inte läsa länken. Kontrollera att du klistrat in hela adressen.";
   joinErrorEl.hidden = false;
+});
+
+transferForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (redeeming) return;
+  if (!validateForm(transferForm)) return;
+
+  transferErrorEl.hidden = true;
+  const raw = transferCodeInput.value.trim();
+  if (!raw) return;
+
+  const submit = transferForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+  redeeming = true;
+  submit.disabled = true;
+  submit.textContent = "Fortsätter…";
+
+  try {
+    const res = await redeemTransferCode(raw);
+    setSession(res.groupId, {
+      memberId: res.memberId,
+      sessionToken: res.sessionToken,
+      displayName: res.displayName,
+    });
+    window.location.href = window.location.origin + buildGroupUrl(res.groupId);
+  } catch (err) {
+    transferErrorEl.textContent =
+      err instanceof Error ? err.message : "Ogiltig eller utgången kod.";
+    transferErrorEl.hidden = false;
+    redeeming = false;
+    submit.disabled = false;
+    submit.textContent = "Fortsätt";
+  }
+});
+
+transferCodeInput.addEventListener("input", () => {
+  const raw = transferCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (raw.length <= 3) {
+    transferCodeInput.value = raw;
+    return;
+  }
+  transferCodeInput.value = `${raw.slice(0, 3)}-${raw.slice(3, 6)}`;
 });
 
 function extractKeyFromUrl(url: string): string | undefined {

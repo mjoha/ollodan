@@ -32,6 +32,17 @@ public record SwishNoteRequest(string? SwishNote);
 
 public record RevertPhaseRequest(string Phase);
 
+public record TransferCodeResponse(string Code, DateTime ExpiresAt, string GroupName);
+
+public record RedeemTransferRequest(string Code);
+
+public record RedeemTransferResponse(
+    Guid GroupId,
+    Guid MemberId,
+    string SessionToken,
+    string DisplayName,
+    string GroupName);
+
 public record ResolvedProductDto(
     string SystembolagetProductId,
     string Url,

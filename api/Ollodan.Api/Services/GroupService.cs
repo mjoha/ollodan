@@ -386,6 +386,75 @@ public class GroupService(AppDbContext db, SystembolagetClient systembolaget)
         return (true, null);
     }
 
+    public async Task<TransferCodeResponse?> CreateTransferCodeAsync(
+        Guid groupId,
+        Member member,
+        CancellationToken ct = default)
+    {
+        var group = await db.Groups.FindAsync([groupId], ct);
+        if (group is null || member.GroupId != groupId || group.Phase == GroupPhase.Closed)
+            return null;
+
+        var existing = await db.MemberTransferCodes
+            .Where(t => t.MemberId == member.Id)
+            .ToListAsync(ct);
+        db.MemberTransferCodes.RemoveRange(existing);
+
+        string code;
+        var attempts = 0;
+        do
+        {
+            code = TransferCodeGenerator.Generate();
+            attempts++;
+        } while (
+            attempts < 20 &&
+            await db.MemberTransferCodes.AnyAsync(t => t.Code == code, ct));
+
+        var expiresAt = DateTime.UtcNow.AddMinutes(5);
+        db.MemberTransferCodes.Add(new MemberTransferCode
+        {
+            Id = Guid.NewGuid(),
+            MemberId = member.Id,
+            GroupId = groupId,
+            Code = code,
+            ExpiresAt = expiresAt
+        });
+        await db.SaveChangesAsync(ct);
+
+        return new TransferCodeResponse(
+            TransferCodeGenerator.FormatDisplay(code),
+            expiresAt,
+            group.Name);
+    }
+
+    public async Task<RedeemTransferResponse?> RedeemTransferCodeAsync(string rawCode, CancellationToken ct = default)
+    {
+        var code = TransferCodeGenerator.Normalize(rawCode);
+        if (code.Length != TransferCodeGenerator.Length)
+            return null;
+
+        var row = await db.MemberTransferCodes
+            .Include(t => t.Member)
+            .Include(t => t.Group)
+            .FirstOrDefaultAsync(t => t.Code == code, ct);
+
+        if (row is null || row.ExpiresAt <= DateTime.UtcNow)
+            return null;
+
+        var member = row.Member;
+        var group = row.Group;
+
+        db.MemberTransferCodes.Remove(row);
+        await db.SaveChangesAsync(ct);
+
+        return new RedeemTransferResponse(
+            group.Id,
+            member.Id,
+            member.SessionToken,
+            member.DisplayName,
+            group.Name);
+    }
+
     public async Task<bool> SetSwishNoteAsync(Guid groupId, string? note, CancellationToken ct = default)
     {
         var group = await db.Groups.FindAsync([groupId], ct);

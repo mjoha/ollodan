@@ -182,3 +182,24 @@ export function setOrderLine(groupId: string, token: string, quantity: number) {
     body: JSON.stringify({ quantity }),
   }, token);
 }
+
+export function createTransferCode(groupId: string, token: string) {
+  return apiFetch<{
+    code: string;
+    expiresAt: string;
+    groupName: string;
+  }>(`/api/groups/${groupId}/transfer-code`, { method: "POST" }, token);
+}
+
+export function redeemTransferCode(code: string) {
+  return apiFetch<{
+    groupId: string;
+    memberId: string;
+    sessionToken: string;
+    displayName: string;
+    groupName: string;
+  }>("/api/transfer/redeem", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}

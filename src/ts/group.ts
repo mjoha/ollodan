@@ -2,6 +2,7 @@ import {
   addProduct,
   adminDeleteProduct,
   adminFetch,
+  createTransferCode,
   deleteProduct,
   getGroup,
   joinGroup,
@@ -118,6 +119,8 @@ let pendingDrafts: FormDrafts = {};
 let shellReady = false;
 let eventsBound = false;
 let pollFailures = 0;
+let transferCode: { code: string; expiresAt: number } | null = null;
+let transferCountdownTimer: number | null = null;
 
 const connectionStatus = document.getElementById("connection-status") as HTMLElement;
 
@@ -425,12 +428,63 @@ function renderSwishInHeader(drafts: FormDrafts): string {
   </p>`;
 }
 
+function formatTransferCountdown(expiresAt: number): string {
+  const sec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function clearTransferCountdown(): void {
+  if (transferCountdownTimer !== null) {
+    window.clearInterval(transferCountdownTimer);
+    transferCountdownTimer = null;
+  }
+}
+
+function startTransferCountdown(): void {
+  clearTransferCountdown();
+  transferCountdownTimer = window.setInterval(() => {
+    if (!transferCode) {
+      clearTransferCountdown();
+      return;
+    }
+    if (transferCode.expiresAt <= Date.now()) {
+      transferCode = null;
+      clearTransferCountdown();
+    }
+    lastGroupSnapshot = "";
+    if (group) render();
+  }, 1000);
+}
+
+function renderTransferSection(): string {
+  if (!session || !group || group.phase === "Closed") return "";
+
+  if (!transferCode || transferCode.expiresAt <= Date.now()) {
+    if (transferCode) transferCode = null;
+    return `<p class="transfer-intro">
+      <button type="button" id="btn-transfer-code" class="linkish">Öppna på annan enhet</button>
+    </p>`;
+  }
+
+  return `<div class="transfer-box" aria-live="polite">
+    <p class="hint">På startsidan: <strong>Fortsätt med kod</strong>. Giltig i
+      <span id="transfer-countdown">${escapeHtml(formatTransferCountdown(transferCode.expiresAt))}</span>.
+    </p>
+    <p class="transfer-code-display" id="transfer-code-display">${escapeHtml(transferCode.code)}</p>
+    <p class="hint">Koden fungerar en gång och tas bort när någon loggar in med den.</p>
+    <button type="button" id="btn-transfer-dismiss">Stäng</button>
+  </div>`;
+}
+
 function renderGroupHeader(drafts: FormDrafts): string {
   if (!group) return "";
   return win(
     "Grupp",
     `<div class="inset-panel readonly-field">${escapeHtml(group.name)}</div>
      <p class="group-meta">Admin: <strong>${escapeHtml(adminDisplayName(group))}</strong></p>
+     ${renderTransferSection()}
      ${adminKey ? renderAdminLinks() : ""}
      ${renderSwishInHeader(drafts)}`
   );
@@ -1016,6 +1070,34 @@ function bindEvents() {
           showError(err instanceof Error ? err.message : "Kunde inte rösta");
         }
       });
+      return;
+    }
+
+    if (target.closest("#btn-transfer-code")) {
+      if (!session) return;
+      const btn = target.closest("#btn-transfer-code") as HTMLButtonElement;
+      await withBusy(btn, "…", async () => {
+        try {
+          const res = await createTransferCode(groupId!, session!.sessionToken);
+          transferCode = {
+            code: res.code,
+            expiresAt: new Date(res.expiresAt).getTime(),
+          };
+          startTransferCountdown();
+          lastGroupSnapshot = "";
+          render();
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Kunde inte skapa kod");
+        }
+      });
+      return;
+    }
+
+    if (target.closest("#btn-transfer-dismiss")) {
+      transferCode = null;
+      clearTransferCountdown();
+      lastGroupSnapshot = "";
+      render();
       return;
     }
 

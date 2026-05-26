@@ -100,6 +100,45 @@
           <p id="join-error" class="error" hidden></p>
         </div>
       </section>
+
+      <section class="win" id="transfer-panel" hidden>
+        <div class="title-bar">
+          <span class="title-bar-text">Fortsätt med kod</span>
+        </div>
+        <div class="win-body">
+          <p class="hint">
+            Ange den 6-teckens koden som visas under &quot;Öppna på annan enhet&quot; i gruppen.
+          </p>
+          <form id="transfer-form" novalidate>
+            <div class="field">
+              <label class="field-label" for="transfer-code">Kod</label>
+              <input
+                id="transfer-code"
+                name="code"
+                type="text"
+                required
+                maxlength="7"
+                autocapitalize="characters"
+                autocomplete="one-time-code"
+                inputmode="text"
+                placeholder="ABC-123"
+                data-required-msg="Ange koden."
+              />
+            </div>
+            <div class="btn-row">
+              <button type="submit" class="primary">Fortsätt</button>
+              <button type="button" id="transfer-cancel">Avbryt</button>
+            </div>
+          </form>
+          <p id="transfer-error" class="error" hidden></p>
+        </div>
+      </section>
+
+      <nav class="page-footer" aria-label="Övrigt">
+        <a href="#" id="join-link">Gå med i grupp</a>
+        <span class="footer-sep" aria-hidden="true">·</span>
+        <a href="#" id="transfer-link">Fortsätt med kod</a>
+      </nav>
     </main>
     <script type="module" src="js/index.js"></script>
   </body>

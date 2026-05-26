@@ -894,6 +894,52 @@ code {
   }
 }
 
+.page-footer {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-size: var(--size-sm);
+}
+
+.page-footer .footer-sep {
+  margin: 0 0.35rem;
+  color: var(--muted);
+}
+
+.transfer-intro {
+  margin: 0.75rem 0 0;
+}
+
+button.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: auto;
+  font: inherit;
+  color: var(--title);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+button.linkish:hover {
+  color: #0000cc;
+}
+
+.transfer-box {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--shadow);
+  background: var(--window);
+}
+
+.transfer-code-display {
+  margin: 0.5rem 0;
+  font-size: 1.75rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  text-align: center;
+  font-family: "Courier New", Courier, monospace;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

@@ -48,6 +48,19 @@ public class GroupsController(GroupService groups) : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost("{id:guid}/transfer-code")]
+    [RequireMember]
+    [EnableRateLimiting("write")]
+    public async Task<ActionResult<TransferCodeResponse>> CreateTransferCode(Guid id, CancellationToken ct)
+    {
+        var member = (Member)HttpContext.Items["Member"]!;
+        var result = await groups.CreateTransferCodeAsync(id, member, ct);
+        if (result is null)
+            return BadRequest(new { error = "Kunde inte skapa kod. Gruppen kan vara stängd." });
+
+        return Ok(result);
+    }
+
     [HttpPost("{id:guid}/products")]
     [RequireMember]
     [EnableRateLimiting("write")]
