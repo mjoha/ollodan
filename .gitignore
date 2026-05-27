@@ -16,3 +16,6 @@ dist/
 .idea/
 *.user
 .DS_Store
+
+# Local deploy scripts
+deploy/push.sh
